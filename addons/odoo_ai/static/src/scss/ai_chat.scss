@@ -1,0 +1,46 @@
+.o_ai_chat {
+    max-height: 100%;
+
+    .o_ai_thread {
+        background-color: #f8f9fa;
+    }
+
+    .o_ai_msg {
+        display: flex;
+
+        .o_ai_bubble {
+            display: inline-block;
+            padding: 8px 12px;
+            border-radius: 12px;
+            max-width: 80%;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+    }
+
+    .o_ai_msg_user {
+        justify-content: flex-end;
+
+        .o_ai_bubble {
+            background-color: #714b67; // primary de Odoo
+            color: #fff;
+        }
+    }
+
+    .o_ai_msg_assistant {
+        justify-content: flex-start;
+
+        .o_ai_bubble {
+            background-color: #fff;
+            border: 1px solid #dee2e6;
+        }
+    }
+
+    .o_ai_confirm {
+        max-width: 80%;
+    }
+
+    .o_ai_input textarea {
+        resize: none;
+    }
+}

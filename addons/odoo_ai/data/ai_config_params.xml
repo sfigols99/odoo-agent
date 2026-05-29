@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- noupdate: editables desde Ajustes > Técnico > Parámetros del sistema
+         sin que un upgrade del módulo los pise. -->
+    <data noupdate="1">
+        <record id="cfg_vllm_url" model="ir.config_parameter">
+            <field name="key">odoo_ai.vllm_url</field>
+            <field name="value">http://vllm-service/v1</field>
+        </record>
+        <record id="cfg_model" model="ir.config_parameter">
+            <field name="key">odoo_ai.model</field>
+            <field name="value">Qwen/Qwen2.5-7B-Instruct</field>
+        </record>
+        <record id="cfg_max_iter" model="ir.config_parameter">
+            <field name="key">odoo_ai.max_tool_iterations</field>
+            <field name="value">6</field>
+        </record>
+        <record id="cfg_temperature" model="ir.config_parameter">
+            <field name="key">odoo_ai.temperature</field>
+            <field name="value">0.1</field>
+        </record>
+        <record id="cfg_timeout" model="ir.config_parameter">
+            <field name="key">odoo_ai.request_timeout</field>
+            <field name="value">120</field>
+        </record>
+    </data>
+</odoo>

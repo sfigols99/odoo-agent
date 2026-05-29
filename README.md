@@ -1,0 +1,130 @@
+# odoo-agent — Asistente de IA embebido en Odoo 18
+
+Asistente conversacional dentro de Odoo que opera sobre **stock, CRM/ventas,
+facturación y compras**, usando un **modelo open-weights autoalojado** (vLLM en
+GPU) y ejecutando las herramientas **en proceso** con los permisos del usuario.
+
+## Arquitectura
+
+```
+Navegador (UI OWL de chat)
+        │  orm.call → odoo.ai.conversation.chat()
+        ▼
+Odoo 18  ── addon odoo_ai ──────────────────────────────┐
+   • odoo.ai.agent: bucle de tool-calling               │
+   • odoo.ai.tools: herramientas sobre el ORM (self.env)│
+        │  POST /v1/chat/completions (tools)            │
+        ▼                                               │
+   vLLM (GPU)  Qwen2.5-7B-Instruct, OpenAI-compatible    │
+                                                         │
+PostgreSQL 15 ◀──────────────────────────────────────────┘
+
+(Opcional) Servidor MCP HTTP  → reutiliza Odoo desde clientes externos
+```
+
+El **asistente embebido** es el camino principal. El **servidor MCP** (`odoo_mcp/`)
+es una capa secundaria y opcional para clientes externos (p. ej. Claude Desktop).
+
+## Componentes y archivos
+
+| Componente | Archivos |
+|---|---|
+| Base de datos | `k8s/postgres.yml` |
+| Odoo + imagen custom | `k8s/odoo.yml`, `Dockerfile.odoo`, `addons/odoo_ai/` |
+| Modelo LLM | `k8s/vllm.yml` |
+| Ingress/TLS | `k8s/ingress.yml` |
+| Secretos (plantilla) | `k8s/secrets.example.yml` |
+| Servidor MCP | `odoo_mcp/`, `k8s/mcp.yml` |
+
+## Prerrequisitos del clúster
+
+- Nodo con **GPU NVIDIA** + device plugin / GPU Operator
+  (`kubectl get nodes -o json | grep nvidia.com/gpu`).
+- `ingress-nginx` y `cert-manager` (para `k8s/ingress.yml`).
+- Un **registry** de imágenes (o cargar imágenes en el nodo para clústeres locales).
+
+## Despliegue (orden recomendado)
+
+```bash
+# 0) Secretos (rellena los CHANGE_ME_* primero)
+cp k8s/secrets.example.yml k8s/secrets.yml   # secrets.yml está en .gitignore
+kubectl apply -f k8s/secrets.yml
+
+# 1) Base: Postgres + (Odoo se despliega tras construir su imagen)
+kubectl apply -f k8s/postgres.yml
+
+# 2) Imagen custom de Odoo con el addon y despliegue
+docker build -f Dockerfile.odoo -t odoo-ai:18.0 .
+#   (local kind)     kind load docker-image odoo-ai:18.0
+#   (local minikube) minikube image load odoo-ai:18.0
+#   (registry)       docker tag/push y ajusta la imagen en k8s/odoo.yml
+kubectl apply -f k8s/odoo.yml
+
+# 3) vLLM (GPU). La primera vez descarga el modelo (lento; ver startupProbe)
+kubectl apply -f k8s/vllm.yml
+
+# 4) Ingress + TLS (ajusta host y email del ClusterIssuer)
+kubectl apply -f k8s/ingress.yml
+
+# 5) (Opcional) Servidor MCP externo
+docker build -t odoo-mcp:1.0 ./odoo_mcp
+kubectl apply -f k8s/mcp.yml
+```
+
+Tras desplegar Odoo, **inicializa una base de datos llamada `odoo`** e instala el
+módulo: Apps → buscar "Odoo AI Assistant" → Instalar (o arranca con `-i odoo_ai`).
+
+### Crear el usuario de bajo privilegio para el MCP (Fase 7)
+
+1. Ajustes → Usuarios → crear `ai_integration` con solo los grupos necesarios
+   (p. ej. Inventario: lectura; CRM: usuario).
+2. Con ese usuario: Preferencias → Seguridad de la cuenta → Nueva API key.
+3. Pon la key en el secret `mcp-secret` (`odoo-api-key`).
+
+## Configuración del asistente
+
+Parámetros en *Ajustes → Técnico → Parámetros del sistema* (valores por defecto
+en `addons/odoo_ai/data/ai_config_params.xml`):
+
+| Clave | Por defecto |
+|---|---|
+| `odoo_ai.vllm_url` | `http://vllm-service/v1` |
+| `odoo_ai.model` | `Qwen/Qwen2.5-7B-Instruct` |
+| `odoo_ai.max_tool_iterations` | `6` |
+| `odoo_ai.temperature` | `0.1` |
+| `odoo_ai.request_timeout` | `120` |
+
+## Verificación end-to-end
+
+1. **vLLM responde con tool_calls**
+   ```bash
+   kubectl port-forward svc/vllm-service 8000:80
+   curl -s localhost:8000/v1/chat/completions -H 'Content-Type: application/json' -d '{
+     "model": "Qwen/Qwen2.5-7B-Instruct",
+     "messages": [{"role":"user","content":"¿Cuánto stock hay del producto Mesa?"}],
+     "tools": [{"type":"function","function":{"name":"check_stock",
+       "parameters":{"type":"object","properties":{"product_name":{"type":"string"}},"required":["product_name"]}}}],
+     "tool_choice": "auto"
+   }' | python -m json.tool
+   ```
+   Debe aparecer `tool_calls` con `check_stock`.
+2. **Lectura en Odoo:** abre *Asistente IA → Chat* y pregunta *"¿cuánto stock hay de
+   \<producto real\>?"* → debe consultar y responder con datos reales.
+3. **Escritura con confirmación:** *"crea un lead para Acme, email a@acme.com"* →
+   aparece la tarjeta **Confirmar/Cancelar**; al confirmar, verifica el `crm.lead`
+   en CRM. Repite con presupuesto/compra/pago.
+4. **Seguridad por usuario:** repite con un usuario de permisos limitados → no debe
+   poder leer/escribir lo que su perfil no permite (la tool devuelve el error).
+5. **MCP externo:** apunta el *MCP inspector* o Claude Desktop a `http://<host>/mcp`
+   y ejecuta `consultar_estoc_producte`.
+6. **Producción:** `kubectl get pods` (probes OK), TLS válido en el Ingress, ningún
+   secreto en texto plano, métricas de vLLM en `/metrics`.
+
+## Notas / pendientes
+
+- **Streaming (Fase 6, opcional):** la UI es single-shot; para streaming token a
+  token usar `stream:true` en vLLM + `bus.bus._sendone` y `bus_service` en OWL.
+- `create_purchase_order` / `register_invoice_payment` dependen de la config
+  contable/almacén (diarios, UoM); ajusta si tu instancia difiere.
+- Odoo a >1 réplica requiere filestore `ReadWriteMany` (el PVC actual es RWO).
+- Sin verificar en vivo: prueba el addon en una instancia Odoo 18 real antes de prod.

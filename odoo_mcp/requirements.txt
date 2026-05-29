@@ -1,0 +1,4 @@
+# Dependencias del servidor MCP (el código está en server.py).
+# 'mcp' incluye FastMCP (mcp.server.fastmcp) con transporte streamable-http.
+# xmlrpc.client es stdlib (no se instala).
+mcp>=1.9.0

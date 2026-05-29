@@ -1,0 +1,77 @@
+# =============================================================================
+# Servidor MCP de Odoo — capa secundaria/opcional para clientes externos
+# (Claude Desktop, etc.). NO está en la ruta crítica del asistente embebido.
+# Autentica contra Odoo con una API key de un usuario de bajo privilegio.
+# =============================================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: odoo-mcp
+  labels:
+    app: odoo-mcp
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: odoo-mcp
+  template:
+    metadata:
+      labels:
+        app: odoo-mcp
+    spec:
+      containers:
+        - name: odoo-mcp
+          image: odoo-mcp:1.0 # build desde odoo_mcp/Dockerfile
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: ODOO_URL
+              value: http://odoo-service:8069
+            - name: ODOO_DB
+              valueFrom:
+                secretKeyRef:
+                  name: mcp-secret
+                  key: odoo-db
+            - name: ODOO_USER
+              valueFrom:
+                secretKeyRef:
+                  name: mcp-secret
+                  key: odoo-user
+            - name: ODOO_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mcp-secret
+                  key: odoo-api-key
+          ports:
+            - containerPort: 8000
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"
+          readinessProbe:
+            tcpSocket:
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 20
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mcp-service
+  labels:
+    app: odoo-mcp
+spec:
+  ports:
+    - port: 8000
+      targetPort: 8000
+  selector:
+    app: odoo-mcp
+# Endpoint MCP interno:  http://mcp-service:8000/mcp
+# Para clientes externos, exponer vía Ingress con autenticación (no por defecto).

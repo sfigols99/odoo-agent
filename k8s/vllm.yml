@@ -1,0 +1,117 @@
+# =============================================================================
+# vLLM — sirve el modelo open-weights con API OpenAI-compatible y tool-calling.
+# Requiere un nodo con GPU NVIDIA y el device plugin / GPU Operator instalado.
+# Verifica:  kubectl get nodes -o json | grep nvidia.com/gpu
+# =============================================================================
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: vllm-model-cache
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 50Gi # pesos del modelo + caché de HuggingFace
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vllm
+  labels:
+    app: vllm
+spec:
+  replicas: 1 # 1 réplica por GPU
+  selector:
+    matchLabels:
+      app: vllm
+  template:
+    metadata:
+      labels:
+        app: vllm
+    spec:
+      # Si los nodos GPU están "tainted" (habitual), descomenta:
+      # tolerations:
+      #   - key: nvidia.com/gpu
+      #     operator: Exists
+      #     effect: NoSchedule
+      # nodeSelector:
+      #   nvidia.com/gpu.present: "true"
+      # runtimeClassName: nvidia   # solo si el clúster usa la runtime class nvidia
+      containers:
+        - name: vllm
+          image: vllm/vllm-openai:v0.6.6 # fija una versión concreta en prod
+          args:
+            - "--model"
+            - "Qwen/Qwen2.5-7B-Instruct"
+            - "--served-model-name"
+            - "Qwen/Qwen2.5-7B-Instruct"
+            - "--enable-auto-tool-choice"
+            - "--tool-call-parser"
+            - "hermes" # plantilla de tool-calling de Qwen2.5 (estilo Hermes)
+            - "--max-model-len"
+            - "16384"
+            - "--gpu-memory-utilization"
+            - "0.90"
+          env:
+            - name: HF_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: vllm-secret
+                  key: hf-token
+          ports:
+            - containerPort: 8000
+              name: http
+          resources:
+            requests:
+              cpu: "2"
+              memory: "16Gi"
+              nvidia.com/gpu: "1"
+            limits:
+              cpu: "4"
+              memory: "24Gi"
+              nvidia.com/gpu: "1"
+          volumeMounts:
+            - name: model-cache
+              mountPath: /root/.cache/huggingface
+            - name: dshm
+              mountPath: /dev/shm # vLLM necesita memoria compartida
+          # La carga del modelo es lenta (descarga + warmup): startupProbe amplio.
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            periodSeconds: 10
+            failureThreshold: 60 # hasta ~10 min para arrancar
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 60
+            periodSeconds: 20
+      volumes:
+        - name: model-cache
+          persistentVolumeClaim:
+            claimName: vllm-model-cache
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 4Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vllm-service
+  labels:
+    app: vllm
+spec:
+  ports:
+    - port: 80
+      targetPort: 8000
+  selector:
+    app: vllm
+# El addon usará:  http://vllm-service/v1

@@ -1,0 +1,17 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# Secrets — NEVER commit real secrets. Only *.example.yml templates are tracked.
+k8s/secrets.yml
+*secrets*.local.yml
+.env
+*.key
+*.pem
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store

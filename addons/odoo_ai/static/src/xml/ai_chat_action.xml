@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+    <t t-name="odoo_ai.ChatAction">
+        <div class="o_ai_chat d-flex flex-column h-100">
+            <div class="o_ai_thread flex-grow-1 overflow-auto p-3" t-ref="thread">
+                <t t-if="state.messages.length === 0">
+                    <div class="text-muted text-center mt-4">
+                        Pregúntame sobre stock, ventas, facturas o compras.
+                    </div>
+                </t>
+                <t t-foreach="state.messages" t-as="msg" t-key="msg_index">
+                    <div t-attf-class="o_ai_msg o_ai_msg_{{ msg.role }} mb-2">
+                        <span class="o_ai_bubble" t-esc="msg.content"/>
+                    </div>
+                </t>
+                <t t-if="state.pending">
+                    <div class="o_ai_confirm card p-3 my-2">
+                        <div class="mb-2"><strong>Confirmar acción</strong></div>
+                        <div class="mb-2" t-esc="state.pending.description"/>
+                        <div>
+                            <button class="btn btn-primary btn-sm me-2"
+                                    t-on-click="() => this.confirm(true)">
+                                Confirmar
+                            </button>
+                            <button class="btn btn-secondary btn-sm"
+                                    t-on-click="() => this.confirm(false)">
+                                Cancelar
+                            </button>
+                        </div>
+                    </div>
+                </t>
+                <t t-if="state.loading">
+                    <div class="text-muted o_ai_loading">
+                        <i class="fa fa-spinner fa-spin me-1"/> Pensando…
+                    </div>
+                </t>
+            </div>
+            <div class="o_ai_input border-top p-2 d-flex">
+                <textarea class="form-control me-2" rows="1"
+                          placeholder="Escribe tu mensaje…"
+                          t-model="state.input"
+                          t-on-keydown="onKeydown"
+                          t-att-disabled="state.pending"/>
+                <button class="btn btn-primary"
+                        t-on-click="sendMessage"
+                        t-att-disabled="state.loading">
+                    Enviar
+                </button>
+            </div>
+        </div>
+    </t>
+</templates>

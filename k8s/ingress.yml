@@ -1,0 +1,68 @@
+# =============================================================================
+# Ingress + TLS para Odoo. Asume ingress-nginx y cert-manager instalados.
+#   helm: ingress-nginx/ingress-nginx  y  jetstack/cert-manager
+#
+# ⚠️ Cambia:
+#   - el email del ClusterIssuer
+#   - el host (odoo.example.com) y el nombre del Secret TLS
+# =============================================================================
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-prod
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: CHANGE_ME@example.com
+    privateKeySecretRef:
+      name: letsencrypt-prod-account-key
+    solvers:
+      - http01:
+          ingress:
+            class: nginx
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: odoo-ingress
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    # El bus de Odoo 18 usa WebSocket (conexión larga): sin estos timeouts
+    # el chat/streaming "pide recargar la página".
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-body-size: "64m"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - odoo.example.com
+      secretName: odoo-tls
+  rules:
+    - host: odoo.example.com
+      http:
+        paths:
+          # WebSocket / longpolling -> puerto gevent 8072 (workers > 0).
+          - path: /websocket
+            pathType: Prefix
+            backend:
+              service:
+                name: odoo-service
+                port:
+                  name: websocket
+          - path: /longpolling
+            pathType: Prefix
+            backend:
+              service:
+                name: odoo-service
+                port:
+                  name: websocket
+          # Resto del tráfico HTTP -> puerto 8069.
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: odoo-service
+                port:
+                  name: http

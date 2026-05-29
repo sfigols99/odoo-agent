@@ -1,0 +1,13 @@
+# Imagen Odoo custom que empaqueta el addon odoo_ai (despliegue inmutable).
+#
+# Build:   docker build -f Dockerfile.odoo -t odoo-ai:18.0 .
+# Push:    docker tag odoo-ai:18.0 <registry>/odoo-ai:18.0 && docker push <registry>/odoo-ai:18.0
+# Local:   (minikube)  minikube image load odoo-ai:18.0
+#          (kind)      kind load docker-image odoo-ai:18.0
+FROM odoo:18.0
+
+# El addon se monta en /mnt/extra-addons, incluido en addons_path (odoo.conf).
+COPY ./addons /mnt/extra-addons
+
+# requests ya es dependencia core de Odoo; no hace falta instalar nada más
+# para llamar al endpoint OpenAI-compatible de vLLM.

@@ -1,0 +1,99 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: odoo-data-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: odoo
+spec:
+  replicas: 1 # multi-réplica requiere filestore RWX (ver plan, Fase 8)
+  selector:
+    matchLabels:
+      app: odoo
+  template:
+    metadata:
+      labels:
+        app: odoo
+    spec:
+      containers:
+        - name: odoo
+          # Imagen custom construida desde Dockerfile.odoo (empaqueta el addon
+          # odoo_ai en /mnt/extra-addons). Constrúyela y súbela a tu registry,
+          # o cárgala en el nodo para clústeres locales. Ver README.
+          image: odoo-ai:18.0
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: HOST
+              value: postgres-service
+            - name: USER
+              value: odoo
+            # db_password viene del secreto; el resto de opciones (db_host,
+            # db_user, addons_path, proxy_mode, workers...) vienen de odoo.conf.
+            - name: PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: odoo-db-credentials
+                  key: password
+          ports:
+            - containerPort: 8069
+              name: http
+            - containerPort: 8072
+              name: websocket # bus/websocket de Odoo 18 cuando workers > 0
+          volumeMounts:
+            - name: odoo-data
+              mountPath: /var/lib/odoo
+            - name: odoo-config
+              mountPath: /etc/odoo/odoo.conf
+              subPath: odoo.conf
+              readOnly: true
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "512Mi"
+            limits:
+              cpu: "2"
+              memory: "2Gi"
+          readinessProbe:
+            httpGet:
+              path: /web/health
+              port: 8069
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            failureThreshold: 6
+          livenessProbe:
+            tcpSocket:
+              port: 8069
+            initialDelaySeconds: 60
+            periodSeconds: 20
+      volumes:
+        - name: odoo-data
+          persistentVolumeClaim:
+            claimName: odoo-data-pvc
+        - name: odoo-config
+          secret:
+            secretName: odoo-config-secret
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: odoo-service
+  labels:
+    app: odoo
+spec:
+  ports:
+    - port: 8069
+      targetPort: 8069
+      name: http
+    - port: 8072
+      targetPort: 8072
+      name: websocket
+  selector:
+    app: odoo
