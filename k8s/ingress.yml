@@ -13,7 +13,7 @@ metadata:
 spec:
   acme:
     server: https://acme-v02.api.letsencrypt.org/directory
-    email: CHANGE_ME@example.com
+    email: sergifigols@outlook.com
     privateKeySecretRef:
       name: letsencrypt-prod-account-key
     solvers:

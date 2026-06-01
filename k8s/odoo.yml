@@ -28,7 +28,7 @@ spec:
           # Imagen custom construida desde Dockerfile.odoo (empaqueta el addon
           # odoo_ai en /mnt/extra-addons). Constrúyela y súbela a tu registry,
           # o cárgala en el nodo para clústeres locales. Ver README.
-          image: odoo-ai:18.0
+          image: ghcr.io/sfigols99/odoo-ai:18.0
           imagePullPolicy: IfNotPresent
           env:
             - name: HOST
