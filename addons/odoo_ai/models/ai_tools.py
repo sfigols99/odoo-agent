@@ -171,13 +171,17 @@ class AiTools(models.AbstractModel):
 
     def _list_low_stock(self, args):
         threshold = float(args.get("threshold") or 5)
-        prods = self.env["product.product"].search([], limit=500)
-        low = prods.filtered(
-            lambda p: p.type != "service" and p.qty_available <= threshold)
-        if not low:
+        # En Odoo 17/18 los tipos product/consu se fusionaron y la
+        # "almacenabilidad" pasó al booleano is_storable; solo esos productos
+        # tienen stock real que controlar. Filtramos en el dominio para no
+        # perder coincidencias más allá del límite de búsqueda.
+        prods = self.env["product.product"].search(
+            [("is_storable", "=", True), ("qty_available", "<=", threshold)],
+            limit=30, order="qty_available asc")
+        if not prods:
             return f"No hay productos con stock por debajo de {threshold}."
         return "\n".join(
-            f"{p.display_name}: {p.qty_available}" for p in low[:30])
+            f"{p.display_name}: {p.qty_available}" for p in prods)
 
     # ================== CRM / Ventas ==================
     def _find_customer(self, args):
@@ -193,8 +197,10 @@ class AiTools(models.AbstractModel):
             for p in partners)
 
     def _list_open_opportunities(self, args):
+        # type=opportunity ya excluye las perdidas (active=False). Excluimos
+        # además las ganadas (probability=100) para listar solo las "abiertas".
         leads = self.env["crm.lead"].search(
-            [("type", "=", "opportunity")],
+            [("type", "=", "opportunity"), ("probability", "<", 100)],
             limit=20, order="expected_revenue desc")
         if not leads:
             return "No hay oportunidades abiertas visibles."
