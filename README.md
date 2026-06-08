@@ -156,6 +156,34 @@ en `addons/odoo_ai/data/ai_config_params.xml`):
 6. **Producción:** `kubectl get pods` (probes OK), TLS válido en el Ingress, ningún
    secreto en texto plano, métricas de vLLM en `/metrics`.
 
+## Automatizaciones por módulo (registro condicional)
+
+Las herramientas del asistente se registran de forma **condicional**: cada tool
+puede declarar `requires=["modulo"]` en `TOOL_SPECS` (`addons/odoo_ai/models/
+ai_tools.py`) y **solo se expone al LLM y se ejecuta si ese módulo está
+instalado** (`odoo.ai.tools._is_available`). Así el addon sigue siendo
+instalable sin módulos extra, y cada integración nueva (OCA u otra) se "enchufa"
+sin tocar el núcleo:
+
+```python
+{"is_write": True, "requires": ["crm_lead_code"], "method": "_mi_tool",
+ "schema": _fn("mi_tool", "…", {...})},
+```
+
+Iremos añadiendo integraciones **módulo a módulo**. El primer lote cubre el
+pipeline de **CRM** (módulo core de Odoo; las extensiones OCA vendrán después):
+
+| Categoría | Herramientas |
+|---|---|
+| Consulta | `get_opportunity`, `list_open_opportunities`, `find_customer` |
+| Ciclo de vida | `convert_lead_to_opportunity`, `set_opportunity_stage`, `mark_opportunity_won`, `mark_opportunity_lost` (con motivo) |
+| Asignación y actividades | `assign_opportunity`, `schedule_activity`, `log_note` |
+| Enriquecimiento | `update_opportunity_fields` (ingreso, probabilidad, prioridad, etiquetas) |
+| Higiene de pipeline | `list_stale_opportunities`, `find_duplicate_opportunities` |
+
+Las acciones de escritura pasan por el mismo gate de **confirmación humana** que
+el resto del asistente.
+
 ## Notas / pendientes
 
 - **Streaming (Fase 6, opcional):** la UI es single-shot; para streaming token a
