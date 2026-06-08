@@ -1,0 +1,120 @@
+# =============================================================================
+# Demo local con Docker Compose — alternativa ligera al despliegue en K8s.
+#
+# Objetivo: que "simplemente funcione" en una máquina, sin registry de imágenes.
+# Las imágenes de Odoo y MCP se construyen localmente desde los Dockerfile.
+#
+# Servicios SIEMPRE activos:  db, odoo
+# Servicios bajo PERFIL (opcionales):
+#   --profile gpu  -> vllm-service (necesita GPU NVIDIA + nvidia-container-toolkit)
+#   --profile mcp  -> mcp (servidor MCP para clientes externos)
+#
+# Uso:
+#   docker compose up --build                  # Postgres + Odoo (sin LLM)
+#   docker compose --profile gpu up --build    # + vLLM en GPU
+#   docker compose --profile mcp up --build    # + servidor MCP
+#   docker compose --profile gpu --profile mcp up --build   # todo
+#
+# Tras arrancar: http://localhost:8069  (el módulo odoo_ai se instala solo en la
+# base de datos `odoo` la primera vez). El asistente usa http://vllm-service/v1
+# por defecto, que resuelve al servicio vllm-service de esta red.
+# =============================================================================
+services:
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: odoo
+      POSTGRES_PASSWORD: odoo
+      # Odoo gestiona sus propias BBDD; postgres arranca con la de sistema.
+      POSTGRES_DB: postgres
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U odoo"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  odoo:
+    build:
+      context: .
+      dockerfile: Dockerfile.odoo
+    image: odoo-ai:18.0
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      # El entrypoint de la imagen oficial usa estas envs para la conexión a BD.
+      HOST: db
+      USER: odoo
+      PASSWORD: odoo
+    # Crea la BD `odoo` e instala el addon en el primer arranque; en arranques
+    # posteriores el módulo ya está instalado y -i es un no-op.
+    command: ["odoo", "-d", "odoo", "-i", "odoo_ai", "--db-filter=^odoo$$"]
+    ports:
+      - "8069:8069"
+      - "8072:8072" # bus/websocket
+    volumes:
+      - odoo-data:/var/lib/odoo
+
+  # --------------------------------------------------------------------------
+  # vLLM (GPU). Perfil "gpu": solo arranca con `--profile gpu`.
+  # El nombre del servicio es vllm-service y escucha en el puerto 80, de modo
+  # que la URL por defecto del addon (http://vllm-service/v1) funciona sin tocar
+  # ningún parámetro de configuración.
+  # --------------------------------------------------------------------------
+  vllm-service:
+    image: vllm/vllm-openai:v0.6.6
+    profiles: ["gpu"]
+    command:
+      - "--model"
+      - "Qwen/Qwen2.5-7B-Instruct"
+      - "--served-model-name"
+      - "Qwen/Qwen2.5-7B-Instruct"
+      - "--enable-auto-tool-choice"
+      - "--tool-call-parser"
+      - "hermes"
+      - "--max-model-len"
+      - "16384"
+      - "--gpu-memory-utilization"
+      - "0.90"
+      - "--port"
+      - "80"
+    environment:
+      # Opcional: evita rate-limits al descargar pesos de HuggingFace.
+      HF_TOKEN: ${HF_TOKEN:-}
+    volumes:
+      - vllm-cache:/root/.cache/huggingface
+    shm_size: "4gb"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: ["gpu"]
+
+  # --------------------------------------------------------------------------
+  # Servidor MCP (capa externa opcional). Perfil "mcp".
+  # Requiere un usuario Odoo de bajo privilegio + API key (ver README, Fase 7).
+  # Define ODOO_API_KEY antes de arrancar este perfil.
+  # --------------------------------------------------------------------------
+  mcp:
+    build:
+      context: ./odoo_mcp
+    image: odoo-mcp:1.0
+    profiles: ["mcp"]
+    depends_on:
+      - odoo
+    environment:
+      ODOO_URL: http://odoo:8069
+      ODOO_DB: odoo
+      ODOO_USER: ${ODOO_USER:-ai_integration}
+      ODOO_PASSWORD: ${ODOO_API_KEY:-}
+    ports:
+      - "8000:8000" # endpoint MCP en http://localhost:8000/mcp
+
+volumes:
+  db-data:
+  odoo-data:
+  vllm-cache:

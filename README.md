@@ -25,6 +25,13 @@ PostgreSQL 15 ◀─────────────────────
 El **asistente embebido** es el camino principal. El **servidor MCP** (`odoo_mcp/`)
 es una capa secundaria y opcional para clientes externos (p. ej. Claude Desktop).
 
+> **Modelos de seguridad distintos.** El asistente embebido ejecuta las tools
+> **en proceso con los permisos del usuario** y exige **confirmación humana** para
+> toda escritura. El servidor MCP, en cambio, se autentica con una **cuenta de
+> servicio compartida de bajo privilegio** (API key, ver Fase 7) y **no** aplica
+> ese paso de confirmación: el control de acceso de MCP recae enteramente en los
+> permisos de ese usuario y en exponer el endpoint solo con autenticación.
+
 ## Componentes y archivos
 
 | Componente | Archivos |
@@ -35,6 +42,35 @@ es una capa secundaria y opcional para clientes externos (p. ej. Claude Desktop)
 | Ingress/TLS | `k8s/ingress.yml` |
 | Secretos (plantilla) | `k8s/secrets.example.yml` |
 | Servidor MCP | `odoo_mcp/`, `k8s/mcp.yml` |
+
+## Demo rápida con Docker Compose
+
+Para probar en local sin Kubernetes (ni registry de imágenes) usa
+`docker-compose.yml`. Construye las imágenes localmente desde los Dockerfile.
+
+```bash
+# Postgres + Odoo (el addon se instala solo en la BD `odoo`)
+docker compose up --build
+# → http://localhost:8069   (Asistente IA → Chat)
+
+# + vLLM en GPU (necesita GPU NVIDIA + nvidia-container-toolkit)
+docker compose --profile gpu up --build
+
+# + servidor MCP externo (define antes ODOO_API_KEY de un usuario de bajo privilegio)
+docker compose --profile mcp up --build
+```
+
+El servicio de vLLM se llama `vllm-service` y escucha en el puerto 80, así que la
+URL por defecto del asistente (`http://vllm-service/v1`) funciona sin tocar nada.
+Sin el perfil `gpu`, apunta `odoo_ai.vllm_url` (Ajustes → Técnico → Parámetros del
+sistema) a cualquier endpoint OpenAI-compatible que tengas a mano.
+
+Las pruebas del addon se ejecutan dentro del contenedor de Odoo:
+
+```bash
+docker compose run --rm odoo odoo -d odoo_test -i odoo_ai \
+  --test-enable --stop-after-init
+```
 
 ## Prerrequisitos del clúster
 
@@ -127,4 +163,8 @@ en `addons/odoo_ai/data/ai_config_params.xml`):
 - `create_purchase_order` / `register_invoice_payment` dependen de la config
   contable/almacén (diarios, UoM); ajusta si tu instancia difiere.
 - Odoo a >1 réplica requiere filestore `ReadWriteMany` (el PVC actual es RWO).
+- **Ocupación de workers:** cada turno de chat es síncrono y puede encadenar
+  hasta `max_tool_iterations` llamadas al LLM (hasta `request_timeout` cada una)
+  reteniendo un worker de Odoo. Con `workers = 2`, pocos usuarios concurrentes
+  pueden saturarlos; sube `workers` o mueve el bucle a un job asíncrono para prod.
 - Sin verificar en vivo: prueba el addon en una instancia Odoo 18 real antes de prod.

@@ -196,7 +196,14 @@ class AiAgent(models.AbstractModel):
         )
         resp.raise_for_status()
         data = resp.json()
-        return data["choices"][0]["message"]
+        try:
+            return data["choices"][0]["message"]
+        except (KeyError, IndexError, TypeError) as e:
+            # Un 200 con un cuerpo inesperado (choices vacío, etc.) no debe
+            # propagarse como un 500 crudo al RPC.
+            _logger.error("Respuesta inesperada de vLLM: %s", data)
+            raise requests.RequestException(
+                "Respuesta inesperada del modelo de IA.") from e
 
     def _config(self, key):
         icp = self.env["ir.config_parameter"].sudo()
