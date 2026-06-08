@@ -65,6 +65,12 @@ URL por defecto del asistente (`http://vllm-service/v1`) funciona sin tocar nada
 Sin el perfil `gpu`, apunta `odoo_ai.vllm_url` (Ajustes → Técnico → Parámetros del
 sistema) a cualquier endpoint OpenAI-compatible que tengas a mano.
 
+> **GPU pequeña (≤8 GB) / RTX 50-series.** El perfil `gpu` del compose viene
+> ajustado para una RTX 5060 (8 GB, Blackwell sm_120): usa la imagen
+> `vllm/vllm-openai:latest` (las wheels antiguas no traen kernels sm_120) y sirve
+> `Qwen2.5-3B-Instruct-AWQ` bajo el alias `Qwen/Qwen2.5-7B-Instruct`, porque el 7B
+> en FP16 (~15 GB) no cabe. Con más VRAM, sube el modelo en `docker-compose.yml`.
+
 Las pruebas del addon se ejecutan dentro del contenedor de Odoo:
 
 ```bash

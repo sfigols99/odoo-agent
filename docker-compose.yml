@@ -22,6 +22,7 @@
 services:
   db:
     image: postgres:15
+    restart: unless-stopped
     environment:
       POSTGRES_USER: odoo
       POSTGRES_PASSWORD: odoo
@@ -40,6 +41,7 @@ services:
       context: .
       dockerfile: Dockerfile.odoo
     image: odoo-ai:18.0
+    restart: unless-stopped
     depends_on:
       db:
         condition: service_healthy
@@ -62,22 +64,44 @@ services:
   # El nombre del servicio es vllm-service y escucha en el puerto 80, de modo
   # que la URL por defecto del addon (http://vllm-service/v1) funciona sin tocar
   # ningún parámetro de configuración.
+  #
+  # Ajustado para GPU pequeña (RTX 5060, 8 GB VRAM, arquitectura Blackwell sm_120):
+  #
+  #   * Imagen `latest`: las RTX 50-series (Blackwell) necesitan kernels CUDA 12.8.
+  #     La antigua v0.6.6 fallaba con "no kernel image is available for execution
+  #     on the device". Si `latest` aún fallara con ese error en tu sm_120, la vía
+  #     alternativa es compilar vLLM desde el contenedor NGC nvcr.io/nvidia/
+  #     pytorch:25.02-py3 (ver issue vllm-project/vllm#35432).
+  #
+  #   * Modelo Qwen2.5-3B en AWQ (4-bit): ~3 GB de pesos, frente a los ~15 GB del
+  #     7B en FP16, que NO cabe en 8 GB. Se sirve bajo el alias
+  #     "Qwen/Qwen2.5-7B-Instruct" para que el parámetro odoo_ai.model del addon
+  #     siga siendo válido sin reconfigurar nada en Odoo.
+  #     (Nota: el 3B usa licencia Qwen-Research, no comercial; el 7B es Apache-2.0.)
+  #     Para más calidad, si cupiera, prueba "Qwen/Qwen2.5-7B-Instruct-AWQ" (~5,5 GB,
+  #     muy justo en 8 GB) bajando --max-model-len.
+  #
+  #   * gpu-memory-utilization 0.80 y max-model-len 8192: conservador, deja margen
+  #     para el escritorio/WSL que ya consume ~1,7 GB de los 8 GB.
   # --------------------------------------------------------------------------
   vllm-service:
-    image: vllm/vllm-openai:v0.6.6
+    image: vllm/vllm-openai:latest
+    restart: unless-stopped
     profiles: ["gpu"]
     command:
       - "--model"
-      - "Qwen/Qwen2.5-7B-Instruct"
+      - "Qwen/Qwen2.5-3B-Instruct-AWQ"
       - "--served-model-name"
       - "Qwen/Qwen2.5-7B-Instruct"
+      - "--quantization"
+      - "awq_marlin"
       - "--enable-auto-tool-choice"
       - "--tool-call-parser"
       - "hermes"
       - "--max-model-len"
-      - "16384"
+      - "8192"
       - "--gpu-memory-utilization"
-      - "0.90"
+      - "0.80"
       - "--port"
       - "80"
     environment:
