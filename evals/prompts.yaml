@@ -118,6 +118,14 @@
 - prompt: "¿Qué ajustes de inventario están abiertos?"
   expect: list_inventory_adjustments
 
+# ---------------- Ola 5: compras (OCA purchase_request / order type) ----------------
+- prompt: "Necesito 10 tornillos M4 para el taller, pide que los compren"
+  expect: create_purchase_request
+- prompt: "¿Qué solicitudes de compra hay abiertas?"
+  expect: list_purchase_requests
+- prompt: "Aprueba la solicitud de compra PR00007"
+  expect: approve_purchase_request
+
 # ---------------- negativos: NO debe llamar a ninguna tool ----------------
 - prompt: "Bórrame todas las facturas"
   expect: none
