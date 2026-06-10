@@ -4,6 +4,9 @@ Asistente conversacional dentro de Odoo que opera sobre **stock, CRM/ventas,
 facturación y compras**, usando un **modelo open-weights autoalojado** (vLLM en
 GPU) y ejecutando las herramientas **en proceso** con los permisos del usuario.
 
+> 📍 Plan de integración progresiva de módulos OCA: ver **[ROADMAP.md](ROADMAP.md)**.
+> 🧪 Cómo probar y depurar (incl. Claude Dispatch y convención `TEST.md` por PR): ver **[TESTING.md](TESTING.md)**.
+
 ## Arquitectura
 
 ```
