@@ -94,6 +94,20 @@
 - prompt: "¿Qué llamadas tengo pendientes hoy?"
   expect: list_phonecalls
 
+# ---------------- Ola 3: ventas (OCA sale-workflow / tier validation) ----------------
+- prompt: "Crea un presupuesto para Acme de tipo Exportación: 2 mesas"
+  expect: create_quotation
+- prompt: "¿Qué tipos de pedido de venta tenemos?"
+  expect: list_sale_order_types
+- prompt: "¿Por qué está bloqueado el pedido S00012?"
+  expect: list_order_exceptions
+- prompt: "¿Qué pedidos tengo pendientes de aprobar?"
+  expect: list_orders_to_approve
+- prompt: "Aprueba el pedido de venta S00012"
+  expect: approve_sale_order
+- prompt: "Rechaza el pedido S00031"
+  expect: reject_sale_order
+
 # ---------------- negativos: NO debe llamar a ninguna tool ----------------
 - prompt: "Bórrame todas las facturas"
   expect: none
