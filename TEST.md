@@ -1,44 +1,65 @@
-# TEST — Fase 0.5: CI con módulos OCA
+# TEST — Fase 0.6: Evals de tool-calling
 
 > Convención y flujo de depuración con Claude Dispatch: ver [TESTING.md](TESTING.md).
 
 ## Alcance
 
-[ROADMAP.md](ROADMAP.md), Fase 0.5. GitHub Actions (`.github/workflows/ci.yml`)
-con dos jobs en cada push/PR:
+[ROADMAP.md](ROADMAP.md), Fase 0.6 — última pieza de la plataforma. Banco de
+33 casos (`evals/prompts.yaml`) + runner (`evals/run_evals.py`) que lanza cada
+prompt contra el endpoint OpenAI-compatible con los **schemas reales** del
+addon (importa `ai_specs` standalone, sin Odoo) y comprueba que el modelo
+elige la tool esperada:
 
-- **static**: compila todo el python y verifica que `ai_specs` sigue siendo un
-  paquete puro importable sin Odoo (y que toda tool de escritura tiene
-  descripción de confirmación).
-- **odoo-tests**: suite completa del addon dentro de la imagen `odoo:18.0` con
-  Postgres como service, **instalando los wheels OCA** de
-  `requirements-oca.txt` y la BD con `odoo_ai,auditlog,queue_job` (cubre los
-  caminos condicionales de las Fases 0.3/0.4).
+- 30 casos positivos (ES + CA), incl. 2 con `packs:` restringidos que simulan
+  el router de la Fase 0.2;
+- 3 negativos (`expect: none`): el modelo NO debe llamar a ninguna tool
+  («Bórrame todas las facturas», «¿Cuántos leads se han creado este mes?»…).
 
-## Cómo probarlo
+Con esto, cambiar de modelo, tocar descripciones de tools o añadir un pack
+nuevo tiene una métrica de regresión objetiva.
 
-1. Empuja cualquier commit a una rama → pestaña **Actions** del repo: ambos
-   jobs en verde.
-2. Prueba de fuego del guard: rompe temporalmente un test (p. ej. invierte un
-   assert de `test_packs.py`), push → el job `odoo-tests` debe fallar con el
-   `FAIL:` visible en el log; revierte.
-3. Localmente, el equivalente del job es:
-   ```bash
-   docker compose run --rm odoo bash -c "
-     pip3 install --no-deps --break-system-packages -r /dev/stdin <<< 'odoo-addon-queue-job==18.0.*
-   odoo-addon-auditlog==18.0.*' 2>/dev/null;
-     odoo -d test_ci -i odoo_ai,auditlog,queue_job --test-enable \
-       --test-tags /odoo_ai --stop-after-init --log-level=test"
-   ```
-   (con la imagen ya reconstruida, los wheels ya están dentro y basta el `odoo …`).
+## Prerrequisitos
 
-## Casos negativos
+- vLLM levantado (`docker compose --profile gpu up`) o cualquier endpoint
+  OpenAI-compatible.
+- `pip install -r evals/requirements.txt` (requests + PyYAML; sin Odoo).
 
-- Si un wheel OCA no existiera para 18.0, el job falla en «Instalar wheels
-  OCA» → revisar la versión en PyPI (`pip index versions odoo-addon-<nombre>`)
-  y ajustar el pin de `requirements-oca.txt`.
+## Ejecución
+
+```bash
+# Contra el vLLM local del compose (puerto 80 del servicio):
+EVAL_URL=http://localhost:8000/v1 python evals/run_evals.py --verbose
+# (haz antes: docker compose port vllm-service 80  o un port-forward)
+
+# Solo un dominio, simulando el router:
+python evals/run_evals.py --packs crm --verbose
+
+# Umbral de aceptación (exit code 1 si no llega):
+python evals/run_evals.py --min-accuracy 0.85
+```
+
+Salida esperada: lista de ✓/✗ por caso y `Resultado: N/33 (XX%)`.
+
+## Interpretación / depuración
+
+- **Fallos en positivos**: la descripción del schema de esa tool no es lo
+  bastante discriminante, o hay demasiadas tools expuestas → mejorar la
+  descripción en `ai_specs/<pack>.py` o bajar `router_threshold`.
+- **Fallos en negativos** (llama a una tool cuando no debía): endurecer el
+  SYSTEM_PROMPT del agente; con el modelo 3B es esperable alguna fuga.
+- Anota la accuracy de referencia de tu modelo en el PR cuando lo ejecutes:
+  es la línea base para las olas siguientes.
+
+## Casos negativos (del propio harness)
+
+- Sin endpoint accesible → cada caso marca «error de red» y el run sale con
+  exit 1 (no se cuelga).
+- `expect` o `packs` inexistentes en el catálogo → detectados por el smoke
+  test del repo (los expects se validan contra `ai_specs` real).
 
 ## Regresión
 
-La propia CI es ahora la regresión automática de todos los TEST.md anteriores
-(suite completa del addon en cada push).
+La CI (Fase 0.5) sigue cubriendo la suite de Odoo. Este harness es la
+regresión del COMPORTAMIENTO del modelo; ejecútalo manualmente al tocar
+schemas, prompt del agente o modelo. (Integrarlo en CI requeriría GPU en el
+runner: fuera de alcance por ahora.)

@@ -1,0 +1,3 @@
+# Dependencias del harness de evals (NO necesita Odoo).
+requests>=2.31
+PyYAML>=6.0

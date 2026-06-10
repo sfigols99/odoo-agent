@@ -1,0 +1,91 @@
+# Banco de evals de tool-calling (Fase 0.6).
+#
+# Cada caso: prompt de usuario realista -> tool esperada (o `none` si el
+# asistente NO debe llamar a ninguna tool: la respuesta correcta es decir que
+# no puede). `packs` (opcional) limita los schemas expuestos en ese caso,
+# simulando el router de la Fase 0.2.
+#
+# Mantenlo sincronizado con los catálogos de prompts de los TEST.md: cada
+# mejora nueva añade aquí sus casos.
+
+# ---------------- stock ----------------
+- prompt: "¿Cuánto stock hay del producto Mesa?"
+  expect: check_stock
+- prompt: "¿Quedan unidades libres de la silla ergonómica?"
+  expect: check_stock
+- prompt: "¿Qué productos tienen menos de 5 unidades?"
+  expect: list_low_stock
+- prompt: "Dame los productos bajo mínimos con umbral 10"
+  expect: list_low_stock
+
+# ---------------- crm: consulta ----------------
+- prompt: "Busca el cliente Acme"
+  expect: find_customer
+- prompt: "¿Tenemos el teléfono de Joan Puig?"
+  expect: find_customer
+- prompt: "¿Qué oportunidades abiertas tenemos?"
+  expect: list_open_opportunities
+- prompt: "Enséñame el detalle de la oportunidad Web Acme"
+  expect: get_opportunity
+- prompt: "¿Qué oportunidades llevan más de 14 días paradas?"
+  expect: list_stale_opportunities
+- prompt: "¿Tenemos leads duplicados de joan@acme.com?"
+  expect: find_duplicate_opportunities
+
+# ---------------- crm: acciones ----------------
+- prompt: "Crea un lead para Acme, contacto Joan Puig, email joan@acme.com"
+  expect: create_lead
+- prompt: "Convierte el lead Lead Acme en oportunidad"
+  expect: convert_lead_to_opportunity
+- prompt: "Mueve Web Acme a la etapa Propuesta"
+  expect: set_opportunity_stage
+- prompt: "Marca Web Acme como ganada"
+  expect: mark_opportunity_won
+- prompt: "Marca Web Bcorp como perdida, el precio era demasiado alto"
+  expect: mark_opportunity_lost
+- prompt: "Asigna la oportunidad Web Acme a Maria"
+  expect: assign_opportunity
+- prompt: "Prográmame una llamada para mañana con Web Acme: revisar presupuesto"
+  expect: schedule_activity
+- prompt: "Apunta una nota en Web Acme: el cliente pide descuento"
+  expect: log_note
+- prompt: "Pon Web Acme con ingreso esperado 5000 y prioridad alta"
+  expect: update_opportunity_fields
+
+# ---------------- multi-idioma (catalán) ----------------
+- prompt: "Marca Web Acme com a guanyada"
+  expect: mark_opportunity_won
+- prompt: "Quant estoc tenim del producte Taula?"
+  expect: check_stock
+
+# ---------------- ventas / facturación / compras ----------------
+- prompt: "Crea un presupuesto para Acme: 2 mesas"
+  expect: create_quotation
+- prompt: "¿Qué facturas están pendientes de cobro?"
+  expect: list_unpaid_invoices
+- prompt: "¿En qué estado está la factura INV/2025/00012?"
+  expect: invoice_status
+- prompt: "Registra el pago de la factura INV/2025/00012"
+  expect: register_invoice_payment
+- prompt: "¿Qué pedidos de compra están abiertos?"
+  expect: list_open_purchase_orders
+- prompt: "Crea un pedido de compra a Proveedor SA: 50 tornillos M4"
+  expect: create_purchase_order
+- prompt: "Confirma el pedido de compra P00012"
+  expect: confirm_purchase_order
+
+# ---------------- packs restringidos (simula el router) ----------------
+- prompt: "¿Cuánto stock hay del producto Mesa?"
+  expect: check_stock
+  packs: [stock]
+- prompt: "Marca Web Acme como ganada"
+  expect: mark_opportunity_won
+  packs: [crm]
+
+# ---------------- negativos: NO debe llamar a ninguna tool ----------------
+- prompt: "Bórrame todas las facturas"
+  expect: none
+- prompt: "¿Cuántos leads se han creado este mes?"
+  expect: none
+- prompt: "Hola, ¿qué sabes hacer?"
+  expect: none
