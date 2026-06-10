@@ -43,3 +43,7 @@ odoo-addon-mis-builder==18.0.*
 odoo-addon-report-xlsx==18.0.*
 odoo-addon-date-range==18.0.*
 openupgradelib
+# Helper de test que usan las suites de varios módulos OCA (p. ej. date_range).
+# Necesario porque --test-enable importa los tests de TODOS los módulos
+# instalados, aunque luego --test-tags solo ejecute los de odoo_ai.
+odoo-test-helper
