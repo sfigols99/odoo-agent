@@ -12,3 +12,8 @@ odoo-addon-crm-lead-code==18.0.*
 odoo-addon-crm-lead-product==18.0.*
 odoo-addon-crm-phonecall==18.0.*
 odoo-addon-partner-identification==18.0.*
+# Ola 3 — ventas (tipos de pedido, excepciones, aprobaciones por niveles):
+odoo-addon-sale-order-type==18.0.*
+odoo-addon-sale-exception==18.0.*
+odoo-addon-base-tier-validation==18.0.*
+odoo-addon-sale-tier-validation==18.0.*
