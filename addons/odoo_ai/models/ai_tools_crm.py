@@ -166,7 +166,7 @@ class AiToolsCrm(models.AbstractModel):
         vals = {}
         done = []
         if args.get("salesperson"):
-            user = self.env["res.users"].search(
+            user = self.env["res.users"].with_context(active_test=False).search(
                 [("name", "ilike", args["salesperson"])], limit=1)
             if not user:
                 return f"No se encontró el comercial «{args['salesperson']}»."
