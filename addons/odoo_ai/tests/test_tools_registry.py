@@ -36,3 +36,30 @@ class TestToolsRegistry(TransactionCase):
         # execute_tool nunca lanza: devuelve texto que el modelo puede leer.
         out = self.tools.execute_tool("nope", {})
         self.assertIn("desconocida", out)
+
+    # ---------------- Registro condicional ----------------
+    def test_crm_tools_exposed_when_crm_installed(self):
+        # crm es dependencia del addon: estas tools deben estar expuestas.
+        names = [s["function"]["name"] for s in self.tools.get_tool_schemas()]
+        for expected in ("set_opportunity_stage", "mark_opportunity_won",
+                         "schedule_activity", "list_stale_opportunities"):
+            self.assertIn(expected, names)
+
+    def test_tool_with_unmet_requires_is_hidden_and_blocked(self):
+        # Una tool que requiere un módulo no instalado no se expone ni se ejecuta.
+        installed = self.tools._installed_modules()
+        self.assertNotIn("modulo_oca_inexistente", installed)
+        fake_spec = {"requires": ["modulo_oca_inexistente"]}
+        self.assertFalse(self.tools._is_available(fake_spec, installed))
+        # Y una tool core (sin requires) siempre disponible.
+        self.assertTrue(self.tools._is_available({}, installed))
+
+    def test_describe_action_covers_crm_writes(self):
+        # Toda tool de escritura debería tener una descripción específica para
+        # la tarjeta de confirmación (no solo el fallback genérico).
+        from odoo.addons.odoo_ai.models.ai_tools import DESCRIPTIONS, TOOL_SPECS
+        for spec in TOOL_SPECS:
+            if spec["is_write"]:
+                name = spec["schema"]["function"]["name"]
+                self.assertIn(name, DESCRIPTIONS,
+                              f"falta descripción de confirmación para {name}")

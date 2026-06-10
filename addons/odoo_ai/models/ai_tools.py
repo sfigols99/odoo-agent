@@ -1,4 +1,5 @@
 import logging
+from datetime import timedelta
 
 from odoo import fields, models
 from odoo.exceptions import AccessError, UserError, ValidationError
@@ -62,6 +63,100 @@ TOOL_SPECS = [
          "product_name": {"type": "string", "description": "Nombre del producto."},
          "quantity": {"type": "number", "description": "Cantidad (por defecto 1)."}},
         ["customer_name", "product_name"])},
+    # ---------------- CRM: automatizaciones del pipeline ----------------
+    # Todas declaran requires=["crm"] (dependencia dura del módulo, ya en el
+    # manifest) para servir de ejemplo del registro condicional; las tools de
+    # extensiones OCA usarán el mismo mecanismo con su módulo correspondiente.
+    {"is_write": False, "requires": ["crm"], "method": "_get_opportunity",
+     "schema": _fn(
+        "get_opportunity",
+        "Busca una oportunidad/lead del CRM por nombre y devuelve su detalle "
+        "(etapa, comercial, importe, probabilidad, próxima actividad).",
+        {"name": {"type": "string", "description": "Nombre (o parte) de la oportunidad."}},
+        ["name"])},
+    # -- Ciclo de vida --
+    {"is_write": True, "requires": ["crm"], "method": "_convert_lead_to_opportunity",
+     "schema": _fn(
+        "convert_lead_to_opportunity",
+        "Convierte un lead en oportunidad.",
+        {"name": {"type": "string", "description": "Nombre (o parte) del lead."}},
+        ["name"])},
+    {"is_write": True, "requires": ["crm"], "method": "_set_opportunity_stage",
+     "schema": _fn(
+        "set_opportunity_stage",
+        "Mueve una oportunidad a una etapa del pipeline por nombre de etapa.",
+        {"name": {"type": "string", "description": "Nombre (o parte) de la oportunidad."},
+         "stage_name": {"type": "string", "description": "Nombre de la etapa destino."}},
+        ["name", "stage_name"])},
+    {"is_write": True, "requires": ["crm"], "method": "_mark_opportunity_won",
+     "schema": _fn(
+        "mark_opportunity_won",
+        "Marca una oportunidad como ganada.",
+        {"name": {"type": "string", "description": "Nombre (o parte) de la oportunidad."}},
+        ["name"])},
+    {"is_write": True, "requires": ["crm"], "method": "_mark_opportunity_lost",
+     "schema": _fn(
+        "mark_opportunity_lost",
+        "Marca una oportunidad como perdida, con un motivo opcional.",
+        {"name": {"type": "string", "description": "Nombre (o parte) de la oportunidad."},
+         "reason": {"type": "string", "description": "Motivo de pérdida (crm.lost.reason)."}},
+        ["name"])},
+    # -- Asignación y actividades --
+    {"is_write": True, "requires": ["crm"], "method": "_assign_opportunity",
+     "schema": _fn(
+        "assign_opportunity",
+        "Asigna una oportunidad a un comercial y/o a un equipo de ventas.",
+        {"name": {"type": "string", "description": "Nombre (o parte) de la oportunidad."},
+         "salesperson": {"type": "string", "description": "Nombre del comercial (res.users)."},
+         "sales_team": {"type": "string", "description": "Nombre del equipo (crm.team)."}},
+        ["name"])},
+    {"is_write": True, "requires": ["crm"], "method": "_schedule_activity",
+     "schema": _fn(
+        "schedule_activity",
+        "Programa una actividad (llamada, reunión, tarea, email) sobre una "
+        "oportunidad, con fecha de vencimiento y resumen.",
+        {"name": {"type": "string", "description": "Nombre (o parte) de la oportunidad."},
+         "summary": {"type": "string", "description": "Resumen de la actividad."},
+         "activity_type": {"type": "string",
+                           "description": "Tipo: call, meeting, todo o email (por defecto todo)."},
+         "due_in_days": {"type": "number",
+                         "description": "Días hasta el vencimiento (por defecto 1)."}},
+        ["name", "summary"])},
+    {"is_write": True, "requires": ["crm"], "method": "_log_note",
+     "schema": _fn(
+        "log_note",
+        "Registra una nota interna en el historial (chatter) de una oportunidad.",
+        {"name": {"type": "string", "description": "Nombre (o parte) de la oportunidad."},
+         "note": {"type": "string", "description": "Texto de la nota."}},
+        ["name", "note"])},
+    # -- Enriquecimiento --
+    {"is_write": True, "requires": ["crm"], "method": "_update_opportunity_fields",
+     "schema": _fn(
+        "update_opportunity_fields",
+        "Actualiza campos de una oportunidad: ingreso esperado, probabilidad, "
+        "prioridad y/o etiquetas.",
+        {"name": {"type": "string", "description": "Nombre (o parte) de la oportunidad."},
+         "expected_revenue": {"type": "number", "description": "Ingreso esperado."},
+         "probability": {"type": "number", "description": "Probabilidad 0-100."},
+         "priority": {"type": "string",
+                      "description": "Prioridad: low, medium, high o very_high."},
+         "tags": {"type": "array", "items": {"type": "string"},
+                  "description": "Etiquetas (crm.tag); se crean si no existen."}},
+        ["name"])},
+    # -- Higiene de pipeline --
+    {"is_write": False, "requires": ["crm"], "method": "_list_stale_opportunities",
+     "schema": _fn(
+        "list_stale_opportunities",
+        "Lista oportunidades abiertas sin actividad planificada o estancadas "
+        "(sin cambios) durante más de N días, para proponer la siguiente acción.",
+        {"days": {"type": "number", "description": "Umbral de días (por defecto 14)."}})},
+    {"is_write": False, "requires": ["crm"], "method": "_find_duplicate_opportunities",
+     "schema": _fn(
+        "find_duplicate_opportunities",
+        "Busca posibles oportunidades duplicadas por email o por nombre de contacto.",
+        {"name": {"type": "string",
+                  "description": "Email o nombre de contacto a comprobar."}},
+        ["name"])},
     # ---------------- Facturación / Contabilidad ----------------
     {"is_write": False, "method": "_list_unpaid_invoices", "schema": _fn(
         "list_unpaid_invoices",
@@ -115,6 +210,31 @@ DESCRIPTIONS = {
         f"{a.get('quantity', 1)} × «{a.get('product_name')}»."),
     "confirm_purchase_order": lambda a: (
         f"Confirmar el pedido de compra «{a.get('po_name')}»."),
+    # ---- CRM ----
+    "convert_lead_to_opportunity": lambda a: (
+        f"Convertir el lead «{a.get('name')}» en oportunidad."),
+    "set_opportunity_stage": lambda a: (
+        f"Mover «{a.get('name')}» a la etapa «{a.get('stage_name')}»."),
+    "mark_opportunity_won": lambda a: (
+        f"Marcar la oportunidad «{a.get('name')}» como GANADA."),
+    "mark_opportunity_lost": lambda a: (
+        f"Marcar «{a.get('name')}» como PERDIDA"
+        f"{(' (motivo: ' + a['reason'] + ')') if a.get('reason') else ''}."),
+    "assign_opportunity": lambda a: (
+        f"Asignar «{a.get('name')}»"
+        f"{(' al comercial ' + a['salesperson']) if a.get('salesperson') else ''}"
+        f"{(' al equipo ' + a['sales_team']) if a.get('sales_team') else ''}."),
+    "schedule_activity": lambda a: (
+        f"Programar «{a.get('activity_type', 'todo')}» sobre «{a.get('name')}»: "
+        f"{a.get('summary')} (vence en {a.get('due_in_days', 1)} día(s))."),
+    "log_note": lambda a: (
+        f"Registrar una nota en «{a.get('name')}»: {a.get('note')}"),
+    "update_opportunity_fields": lambda a: (
+        f"Actualizar «{a.get('name')}»: "
+        + ", ".join(
+            f"{k}={a[k]}" for k in
+            ("expected_revenue", "probability", "priority", "tags")
+            if a.get(k) is not None) + "."),
 }
 
 
@@ -122,9 +242,35 @@ class AiTools(models.AbstractModel):
     _name = "odoo.ai.tools"
     _description = "Registro de herramientas del Asistente IA (ORM en proceso)"
 
-    # ---------------- Registro / despacho ----------------
+    # ---------------- Registro condicional / despacho ----------------
+    def _installed_modules(self):
+        """Conjunto de módulos instalados (cacheado por petición)."""
+        mods = self.env["ir.module.module"].sudo().search(
+            [("state", "=", "installed")])
+        return set(mods.mapped("name"))
+
+    def _is_available(self, spec, installed=None):
+        """Una tool está disponible si todos sus módulos `requires` lo están.
+
+        Las tools sin `requires` (core: stock, account, purchase...) siempre
+        están disponibles. Este es el punto de extensión para integrar módulos
+        OCA: cada tool nueva declara `requires=["nombre_modulo_oca"]` y solo
+        aparece cuando ese módulo está instalado.
+        """
+        requires = spec.get("requires")
+        if not requires:
+            return True
+        if installed is None:
+            installed = self._installed_modules()
+        return all(m in installed for m in requires)
+
+    def _available_specs(self):
+        installed = self._installed_modules()
+        return [s for s in TOOL_SPECS if self._is_available(s, installed)]
+
     def get_tool_schemas(self):
-        return [s["schema"] for s in TOOL_SPECS]
+        # Solo se exponen al LLM las tools cuyos módulos están instalados.
+        return [s["schema"] for s in self._available_specs()]
 
     def _spec(self, name):
         return next(
@@ -144,6 +290,9 @@ class AiTools(models.AbstractModel):
         spec = self._spec(name)
         if not spec:
             return f"Error: herramienta desconocida «{name}»."
+        if not self._is_available(spec):
+            return (f"La herramienta «{name}» no está disponible: requiere los "
+                    f"módulos {spec.get('requires')} (no instalados).")
         method = getattr(self, spec["method"], None)
         if method is None:
             return f"Error: implementación no encontrada para «{name}»."
@@ -244,6 +393,226 @@ class AiTools(models.AbstractModel):
         return (f"Presupuesto {order.name} creado para {partner.display_name}: "
                 f"{qty} × {product.display_name}. Total: {order.amount_total} "
                 f"{order.currency_id.name}.")
+
+    # ================== CRM: automatizaciones del pipeline ==================
+    def _find_lead(self, name, only_open=True, prefer_opportunity=True):
+        """Localiza un único lead/oportunidad por nombre.
+
+        Devuelve un recordset (1 registro) o un string de error legible si no
+        hay coincidencia o si es ambigua.
+        """
+        name = (name or "").strip()
+        if not name:
+            return "Falta el nombre de la oportunidad."
+        domain = [("name", "ilike", name)]
+        if prefer_opportunity:
+            domain = ["&", ("type", "=", "opportunity")] + domain
+        leads = self.env["crm.lead"].search(domain, limit=6)
+        if not leads and prefer_opportunity:
+            # Reintenta incluyendo leads (no solo oportunidades).
+            leads = self.env["crm.lead"].search([("name", "ilike", name)], limit=6)
+        if not leads:
+            return f"No se encontró ninguna oportunidad con «{name}»."
+        if len(leads) > 1:
+            opts = ", ".join(f"[{l.id}] {l.name}" for l in leads)
+            return (f"Hay varias coincidencias para «{name}»: {opts}. "
+                    f"Precisa cuál.")
+        return leads
+
+    def _get_opportunity(self, args):
+        res = self._find_lead(args.get("name"))
+        if isinstance(res, str):
+            return res
+        l = res
+        act = l.activity_ids[:1]
+        return (
+            f"[{l.id}] {l.name} — tipo: {l.type}\n"
+            f"Cliente: {l.partner_id.display_name or l.contact_name or '—'}\n"
+            f"Etapa: {l.stage_id.name} — probabilidad: {l.probability}%\n"
+            f"Ingreso esperado: {l.expected_revenue} {l.company_currency.name or ''}\n"
+            f"Comercial: {l.user_id.name or '—'} — equipo: {l.team_id.name or '—'}\n"
+            f"Próxima actividad: "
+            + (f"{act.activity_type_id.name} «{act.summary or ''}» vence "
+               f"{act.date_deadline}" if act else "ninguna"))
+
+    def _convert_lead_to_opportunity(self, args):
+        res = self._find_lead(args.get("name"), prefer_opportunity=False)
+        if isinstance(res, str):
+            return res
+        lead = res
+        if lead.type == "opportunity":
+            return f"«{lead.name}» ya es una oportunidad."
+        # Odoo 17/18: convert_opportunity recibe un RECORD de partner (no un id).
+        # Gestiona asignación, etapa y vínculo de partner según la config del CRM.
+        lead.convert_opportunity(lead.partner_id)
+        return f"Lead «{lead.name}» convertido en oportunidad (etapa: {lead.stage_id.name})."
+
+    def _set_opportunity_stage(self, args):
+        res = self._find_lead(args.get("name"))
+        if isinstance(res, str):
+            return res
+        lead = res
+        stage_name = (args.get("stage_name") or "").strip()
+        stage = self.env["crm.stage"].search(
+            [("name", "ilike", stage_name)], limit=1)
+        if not stage:
+            stages = self.env["crm.stage"].search([])
+            return (f"No se encontró la etapa «{stage_name}». "
+                    f"Disponibles: {', '.join(stages.mapped('name'))}.")
+        lead.stage_id = stage.id
+        return f"«{lead.name}» movida a la etapa «{stage.name}»."
+
+    def _mark_opportunity_won(self, args):
+        res = self._find_lead(args.get("name"))
+        if isinstance(res, str):
+            return res
+        lead = res
+        lead.action_set_won()
+        return f"Oportunidad «{lead.name}» marcada como ganada (prob. {lead.probability}%)."
+
+    def _mark_opportunity_lost(self, args):
+        res = self._find_lead(args.get("name"))
+        if isinstance(res, str):
+            return res
+        lead = res
+        reason = (args.get("reason") or "").strip()
+        ctx = {}
+        if reason:
+            lost = self.env["crm.lost.reason"].search(
+                [("name", "ilike", reason)], limit=1)
+            if not lost:
+                lost = self.env["crm.lost.reason"].create({"name": reason})
+            ctx["default_lost_reason_id"] = lost.id
+        # action_set_lost acepta lost_reason_id como kwarg en Odoo 16+.
+        if ctx:
+            lead.action_set_lost(lost_reason_id=ctx["default_lost_reason_id"])
+        else:
+            lead.action_set_lost()
+        return (f"Oportunidad «{lead.name}» marcada como perdida"
+                f"{(' (motivo: ' + reason + ')') if reason else ''}.")
+
+    def _assign_opportunity(self, args):
+        res = self._find_lead(args.get("name"))
+        if isinstance(res, str):
+            return res
+        lead = res
+        vals = {}
+        done = []
+        if args.get("salesperson"):
+            user = self.env["res.users"].search(
+                [("name", "ilike", args["salesperson"])], limit=1)
+            if not user:
+                return f"No se encontró el comercial «{args['salesperson']}»."
+            vals["user_id"] = user.id
+            done.append(f"comercial {user.name}")
+        if args.get("sales_team"):
+            team = self.env["crm.team"].search(
+                [("name", "ilike", args["sales_team"])], limit=1)
+            if not team:
+                return f"No se encontró el equipo «{args['sales_team']}»."
+            vals["team_id"] = team.id
+            done.append(f"equipo {team.name}")
+        if not vals:
+            return "Indica un comercial y/o un equipo de ventas."
+        lead.write(vals)
+        return f"«{lead.name}» asignada a {', '.join(done)}."
+
+    def _schedule_activity(self, args):
+        res = self._find_lead(args.get("name"))
+        if isinstance(res, str):
+            return res
+        lead = res
+        # Mapeo de tipos amigables a los xmlid estándar de mail.activity.type.
+        type_xmlids = {
+            "call": "mail.mail_activity_data_call",
+            "meeting": "mail.mail_activity_data_meeting",
+            "todo": "mail.mail_activity_data_todo",
+            "email": "mail.mail_activity_data_email",
+        }
+        key = (args.get("activity_type") or "todo").lower()
+        xmlid = type_xmlids.get(key, type_xmlids["todo"])
+        act_type = self.env.ref(xmlid, raise_if_not_found=False)
+        due = fields.Date.today() + timedelta(days=int(args.get("due_in_days") or 1))
+        lead.activity_schedule(
+            act_type_xmlid=xmlid if act_type else False,
+            date_deadline=due,
+            summary=args.get("summary") or "",
+        )
+        return (f"Actividad «{key}» programada sobre «{lead.name}» para {due}: "
+                f"{args.get('summary') or ''}.")
+
+    def _log_note(self, args):
+        res = self._find_lead(args.get("name"))
+        if isinstance(res, str):
+            return res
+        lead = res
+        note = (args.get("note") or "").strip()
+        if not note:
+            return "La nota está vacía."
+        lead.message_post(body=note)
+        return f"Nota registrada en «{lead.name}»."
+
+    def _update_opportunity_fields(self, args):
+        res = self._find_lead(args.get("name"))
+        if isinstance(res, str):
+            return res
+        lead = res
+        vals = {}
+        if args.get("expected_revenue") is not None:
+            vals["expected_revenue"] = float(args["expected_revenue"])
+        if args.get("probability") is not None:
+            vals["probability"] = max(0.0, min(100.0, float(args["probability"])))
+        if args.get("priority"):
+            # crm.lead.priority: 0=low,1=medium,2=high,3=very_high.
+            prio_map = {"low": "0", "medium": "1", "high": "2", "very_high": "3"}
+            p = prio_map.get(str(args["priority"]).lower())
+            if p is None:
+                return ("Prioridad no válida: usa low, medium, high o very_high.")
+            vals["priority"] = p
+        if args.get("tags"):
+            tag_ids = []
+            for t in args["tags"]:
+                tag = self.env["crm.tag"].search([("name", "ilike", t)], limit=1)
+                if not tag:
+                    tag = self.env["crm.tag"].create({"name": t})
+                tag_ids.append(tag.id)
+            vals["tag_ids"] = [(6, 0, tag_ids)]
+        if not vals:
+            return "No se indicó ningún campo a actualizar."
+        lead.write(vals)
+        return f"«{lead.name}» actualizada: {', '.join(vals.keys())}."
+
+    def _list_stale_opportunities(self, args):
+        days = int(args.get("days") or 14)
+        cutoff = fields.Datetime.now() - timedelta(days=days)
+        # Abiertas, sin próxima actividad planificada y sin cambios recientes.
+        leads = self.env["crm.lead"].search([
+            ("type", "=", "opportunity"),
+            ("probability", "<", 100),
+            ("activity_ids", "=", False),
+            ("write_date", "<", cutoff),
+        ], limit=20, order="write_date asc")
+        if not leads:
+            return (f"No hay oportunidades estancadas (>{days} días sin "
+                    f"actividad ni cambios).")
+        return "Oportunidades estancadas (propón la siguiente acción):\n" + "\n".join(
+            f"[{l.id}] {l.name} — etapa: {l.stage_id.name} — "
+            f"último cambio: {l.write_date.date()} — comercial: {l.user_id.name or '—'}"
+            for l in leads)
+
+    def _find_duplicate_opportunities(self, args):
+        term = (args.get("name") or "").strip()
+        if not term:
+            return "Indica un email o nombre de contacto a comprobar."
+        domain = ["|", ("email_from", "ilike", term),
+                  ("contact_name", "ilike", term)]
+        leads = self.env["crm.lead"].search(domain, limit=20, order="create_date desc")
+        if len(leads) < 2:
+            return f"No se encontraron duplicados para «{term}»."
+        return (f"Posibles duplicados para «{term}» ({len(leads)}):\n" + "\n".join(
+            f"[{l.id}] {l.name} — {l.email_from or l.contact_name or '—'} — "
+            f"etapa: {l.stage_id.name} — creado: {l.create_date.date()}"
+            for l in leads))
 
     # ================== Facturación / Contabilidad ==================
     def _list_unpaid_invoices(self, args):
