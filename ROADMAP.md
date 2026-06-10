@@ -33,6 +33,23 @@ si su módulo está instalado (registro condicional, PR #2).
    pospone o se contribuye la migración upstream.
 5. **Texto, no excepciones.** Las tools devuelven siempre texto legible para el
    modelo (errores incluidos); nunca propagan excepciones al RPC.
+6. **Solo Community + OCA (100% gratuito).** Ninguna integración puede depender
+   de módulos de **Odoo Enterprise** (licencia de pago). Donde Enterprise cubre
+   una función, se usa el equivalente gratuito de la OCA (ver tabla siguiente).
+
+### OCA como sustituto gratuito de Enterprise
+
+| Función (Enterprise, de pago) | Equivalente gratuito OCA usado aquí | Ola |
+|---|---|---|
+| Helpdesk | `helpdesk_mgmt` (OCA/helpdesk) | 7 |
+| Informes contables avanzados | `account_financial_report` (OCA/account-financial-reporting) | 6 |
+| Suscripciones | `contract` (OCA/contract) | 8 |
+| Dashboards/consolidación KPI | `mis_builder` (OCA/mis-builder) | 8 |
+| Aprobaciones | `base_tier_validation` (OCA/server-ux) | 3 |
+| Colas/automatización en segundo plano | `queue_job` (OCA/queue) | Fase 0.3 |
+
+El addon base ya cumple: sus `depends` (`crm`, `sale_management`, `account`,
+`purchase`, `stock`, `product`, `web`, `base`) son todos de **Odoo Community**.
 
 ---
 
