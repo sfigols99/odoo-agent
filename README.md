@@ -135,6 +135,8 @@ en `addons/odoo_ai/data/ai_config_params.xml`):
 | `odoo_ai.max_tool_iterations` | `6` |
 | `odoo_ai.temperature` | `0.1` |
 | `odoo_ai.request_timeout` | `120` |
+| `odoo_ai.enabled_packs` | `all` (o csv: `crm,sale`) |
+| `odoo_ai.router_threshold` | `20` (nº de tools a partir del cual se enruta por dominio) |
 
 ## Verificación end-to-end
 

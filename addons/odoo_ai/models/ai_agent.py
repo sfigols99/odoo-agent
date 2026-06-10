@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 
 import requests
 
@@ -14,6 +15,11 @@ DEFAULTS = {
     "odoo_ai.max_tool_iterations": "6",
     "odoo_ai.temperature": "0.1",
     "odoo_ai.request_timeout": "120",
+    # Fase 0.2 — selección dinámica de tools:
+    # packs habilitados ("all" o csv: "crm,sale") y umbral a partir del cual
+    # se enruta por dominio antes de exponer tools al modelo.
+    "odoo_ai.enabled_packs": "all",
+    "odoo_ai.router_threshold": "20",
 }
 
 SYSTEM_PROMPT = """Eres un asistente integrado en el ERP Odoo de la empresa. \
@@ -70,7 +76,7 @@ class AiAgent(models.AbstractModel):
     # ------------------------------------------------------------------
     def _run(self, conv):
         tools_model = self.env["odoo.ai.tools"]
-        schemas = tools_model.get_tool_schemas()
+        schemas = self._select_schemas(conv)
         max_iter = int(self._config("odoo_ai.max_tool_iterations"))
 
         for _i in range(max_iter):
@@ -117,6 +123,70 @@ class AiAgent(models.AbstractModel):
         return {"type": "reply",
                 "content": "He alcanzado el límite de pasos. "
                            "¿Puedes reformular la petición?"}
+
+    # ------------------------------------------------------------------
+    # Selección dinámica de tools (Fase 0.2)
+    # ------------------------------------------------------------------
+    def _enabled_packs(self):
+        """Packs habilitados por configuración, intersecados con los
+        realmente disponibles (módulos instalados)."""
+        available = list(self.env["odoo.ai.tools"].list_packs())
+        raw = (self._config("odoo_ai.enabled_packs") or "all").strip().lower()
+        if raw in ("", "all", "*"):
+            return available
+        wanted = [p.strip() for p in raw.replace(";", ",").split(",") if p.strip()]
+        enabled = [p for p in available if p in wanted]
+        # Config inválida (ningún pack reconocido) => no dejar al agente mudo.
+        return enabled or available
+
+    def _select_schemas(self, conv):
+        """Decide qué schemas exponer al LLM en este turno.
+
+        Con pocos packs/tools se exponen todos los habilitados; por encima del
+        umbral, una primera llamada barata SIN tools clasifica la intención en
+        packs y solo se exponen esos (los modelos pequeños degradan la elección
+        de tool con catálogos grandes).
+        """
+        tools_model = self.env["odoo.ai.tools"]
+        enabled = self._enabled_packs()
+        schemas = tools_model.get_tool_schemas(packs=enabled)
+        threshold = int(self._config("odoo_ai.router_threshold"))
+        if len(schemas) <= threshold or len(enabled) <= 1:
+            return schemas
+        routed = self._route_packs(conv, enabled)
+        if set(routed) == set(enabled):
+            return schemas
+        _logger.info("Router de packs: %s -> %s", enabled, routed)
+        return tools_model.get_tool_schemas(packs=routed)
+
+    def _route_packs(self, conv, enabled):
+        """Clasifica el último mensaje del usuario en packs. Fallback: todos."""
+        user_msgs = conv.message_ids.filtered(lambda m: m.role == "user")
+        last = user_msgs[-1].content if user_msgs else ""
+        if not last:
+            return enabled
+        pack_info = self.env["odoo.ai.tools"].list_packs()
+        catalog = "\n".join(
+            f"- {p}: {pack_info[p]}" for p in enabled if p in pack_info)
+        router_messages = [
+            {"role": "system", "content": (
+                "Clasifica la petición del usuario en uno o más dominios del "
+                f"ERP.\nDominios disponibles:\n{catalog}\n"
+                "Responde SOLO con los nombres de los dominios relevantes "
+                "separados por comas (p. ej. crm,sale), o all si no está "
+                "claro. Nada más.")},
+            {"role": "user", "content": last},
+        ]
+        try:
+            msg = self._call_llm(router_messages, tools=None)
+        except requests.RequestException:
+            _logger.warning("Router de packs: fallo de LLM, expongo todos")
+            return enabled
+        tokens = re.split(r"[^a-z_]+", (msg.get("content") or "").lower())
+        if "all" in tokens:
+            return enabled
+        chosen = [p for p in enabled if p in tokens]
+        return chosen or enabled
 
     # ------------------------------------------------------------------
     # Helpers

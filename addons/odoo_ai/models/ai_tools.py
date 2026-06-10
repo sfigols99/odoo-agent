@@ -46,9 +46,17 @@ class AiTools(models.AbstractModel):
         installed = self._installed_modules()
         return [s for s in TOOL_SPECS if self._is_available(s, installed)]
 
-    def get_tool_schemas(self):
-        # Solo se exponen al LLM las tools cuyos módulos están instalados.
-        return [s["schema"] for s in self._available_specs()]
+    def get_tool_schemas(self, packs=None):
+        """Schemas de las tools disponibles, opcionalmente filtrados por packs.
+
+        Solo se exponen al LLM las tools cuyos módulos están instalados; si se
+        pasa `packs` (lista de nombres), se limita además a esos dominios
+        (selección dinámica, Fase 0.2).
+        """
+        specs = self._available_specs()
+        if packs is not None:
+            specs = [s for s in specs if s["pack"] in packs]
+        return [s["schema"] for s in specs]
 
     def list_packs(self):
         """Packs con al menos una tool disponible: {nombre: descripción}."""
