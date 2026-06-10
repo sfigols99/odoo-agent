@@ -22,6 +22,7 @@
         "security/ir.model.access.csv",
         "security/ai_security.xml",
         "data/ai_config_params.xml",
+        "data/ai_audit_actions.xml",
         "views/ai_client_action.xml",
     ],
     "assets": {
@@ -31,6 +32,7 @@
             "odoo_ai/static/src/xml/ai_chat_action.xml",
         ],
     },
+    "post_init_hook": "post_init_hook",
     "application": True,
     "installable": True,
 }

@@ -7,4 +7,5 @@ from . import ai_tools_crm
 from . import ai_tools_sale
 from . import ai_tools_account
 from . import ai_tools_purchase
+from . import ai_audit
 from . import ai_agent

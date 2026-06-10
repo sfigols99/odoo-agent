@@ -4,3 +4,5 @@
 #
 # Fase 0.3 — ejecución asíncrona del agente:
 odoo-addon-queue-job==18.0.*
+# Fase 0.4 — traza independiente de los cambios hechos vía agente:
+odoo-addon-auditlog==18.0.*

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Acción manual por si auditlog se instala DESPUÉS que odoo_ai:
+         Ajustes > Técnico > Acciones de servidor > ejecutar. -->
+    <record id="action_setup_audit_rules" model="ir.actions.server">
+        <field name="name">Configurar auditoría del Asistente IA</field>
+        <field name="model_id" ref="model_odoo_ai_audit"/>
+        <field name="state">code</field>
+        <field name="code">
+created = env["odoo.ai.audit"].setup_rules()
+        </field>
+    </record>
+</odoo>
