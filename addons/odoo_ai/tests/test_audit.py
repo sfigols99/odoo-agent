@@ -19,6 +19,10 @@ class TestAuditSetup(TransactionCase):
     def test_setup_with_auditlog_creates_and_is_idempotent(self):
         if "auditlog.rule" not in self.env:
             self.skipTest("auditlog no instalado en esta BD")
+        # El post_init_hook del addon ya crea las reglas al instalar; para
+        # ejercer de verdad la CREACIÓN partimos de un estado limpio.
+        self.env["auditlog.rule"].sudo().search(
+            [("name", "like", "odoo_ai: %")]).unlink()
         created = self.audit.setup_rules()
         self.assertTrue(created)
         rules = self.env["auditlog.rule"].sudo().search(
