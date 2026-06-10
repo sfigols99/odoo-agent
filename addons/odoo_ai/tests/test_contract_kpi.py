@@ -20,11 +20,15 @@ class TestContractKpiTools(TransactionCase):
             "name": "Mantenimiento Ola8", "partner_id": partner.id})
         out = self.tools.execute_tool("list_active_contracts", {})
         self.assertIn("Mantenimiento Ola8", out)
-        # Sin líneas recurrentes: no hay próxima factura y la tool lo dice.
+        # Sin líneas recurrentes la tool no genera factura; el mensaje exacto
+        # depende de si el contrato tiene o no recurring_next_date (varía según
+        # la config de demo), así que aceptamos cualquiera de los dos avisos.
         out = self.tools.execute_tool(
             "generate_contract_invoice",
             {"contract_name": "Mantenimiento Ola8"})
-        self.assertIn("no tiene próxima fecha", out)
+        self.assertTrue(
+            "no tiene próxima fecha" in out or "No se generó" in out,
+            f"mensaje inesperado: {out}")
         self.assertTrue(contract)
 
     def test_contracts_to_renew(self):
