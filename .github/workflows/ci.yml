@@ -41,6 +41,11 @@ jobs:
     container:
       image: odoo:18.0
       options: --user root
+    # En jobs con contenedor, el shell por defecto es `sh` (dash), que no
+    # soporta `set -o pipefail`: forzamos bash.
+    defaults:
+      run:
+        shell: bash
     services:
       postgres:
         image: postgres:15
