@@ -6,3 +6,9 @@
 odoo-addon-queue-job==18.0.*
 # Fase 0.4 — traza independiente de los cambios hechos vía agente:
 odoo-addon-auditlog==18.0.*
+# Ola 2 — extensiones OCA de CRM (tools condicionales: solo se activan si el
+# módulo está instalado en la BD):
+odoo-addon-crm-lead-code==18.0.*
+odoo-addon-crm-lead-product==18.0.*
+odoo-addon-crm-phonecall==18.0.*
+odoo-addon-partner-identification==18.0.*

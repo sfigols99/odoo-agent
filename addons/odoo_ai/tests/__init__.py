@@ -5,3 +5,4 @@ from . import test_packs
 from . import test_routing
 from . import test_async
 from . import test_audit
+from . import test_crm_oca

@@ -14,11 +14,19 @@ class AiToolsCrm(models.AbstractModel):
             [("name", "ilike", name)], limit=5)
         if not partners:
             return f"No se encontró ningún contacto con «{name}»."
-        return "\n".join(
-            f"[{p.id}] {p.display_name}"
-            f"{(' — ' + p.email) if p.email else ''}"
-            f"{(' — ' + p.phone) if p.phone else ''}"
-            for p in partners)
+        # Con OCA partner_identification, añade los documentos de identidad.
+        has_ids = "id_numbers" in self.env["res.partner"]._fields
+        lines = []
+        for p in partners:
+            line = (f"[{p.id}] {p.display_name}"
+                    f"{(' — ' + p.email) if p.email else ''}"
+                    f"{(' — ' + p.phone) if p.phone else ''}")
+            if has_ids and p.id_numbers:
+                ids = ", ".join(
+                    f"{n.category_id.name}: {n.name}" for n in p.id_numbers[:3])
+                line += f" — IDs: {ids}"
+            lines.append(line)
+        return "\n".join(lines)
 
     def _list_open_opportunities(self, args):
         # type=opportunity ya excluye las perdidas (active=False). Excluimos
@@ -73,14 +81,13 @@ class AiToolsCrm(models.AbstractModel):
                     f"Precisa cuál.")
         return leads
 
-    def _get_opportunity(self, args):
-        res = self._find_lead(args.get("name"))
-        if isinstance(res, str):
-            return res
-        l = res
+    def _lead_details(self, l):
         act = l.activity_ids[:1]
+        # Con OCA crm_lead_code, incluye el código de referencia.
+        code = (f" — código: {l.code}"
+                if "code" in l._fields and l.code else "")
         return (
-            f"[{l.id}] {l.name} — tipo: {l.type}\n"
+            f"[{l.id}] {l.name} — tipo: {l.type}{code}\n"
             f"Cliente: {l.partner_id.display_name or l.contact_name or '—'}\n"
             f"Etapa: {l.stage_id.name} — probabilidad: {l.probability}%\n"
             f"Ingreso esperado: {l.expected_revenue} {l.company_currency.name or ''}\n"
@@ -88,6 +95,12 @@ class AiToolsCrm(models.AbstractModel):
             f"Próxima actividad: "
             + (f"{act.activity_type_id.name} «{act.summary or ''}» vence "
                f"{act.date_deadline}" if act else "ninguna"))
+
+    def _get_opportunity(self, args):
+        res = self._find_lead(args.get("name"))
+        if isinstance(res, str):
+            return res
+        return self._lead_details(res)
 
     def _convert_lead_to_opportunity(self, args):
         res = self._find_lead(args.get("name"), prefer_opportunity=False)
@@ -267,3 +280,85 @@ class AiToolsCrm(models.AbstractModel):
             f"[{l.id}] {l.name} — {l.email_from or l.contact_name or '—'} — "
             f"etapa: {l.stage_id.name} — creado: {l.create_date.date()}"
             for l in leads))
+
+    # ============ Extensiones OCA (Ola 2; registro condicional) ============
+    def _find_lead_by_code(self, args):
+        # OCA crm_lead_code: campo `code` (secuencia) en crm.lead.
+        code = (args.get("code") or "").strip()
+        if not code:
+            return "Falta el código del lead."
+        lead = self.env["crm.lead"].search([("code", "ilike", code)], limit=1)
+        if not lead:
+            return f"No se encontró ningún lead con código «{code}»."
+        return self._lead_details(lead)
+
+    def _add_product_interest(self, args):
+        # OCA crm_lead_product: crm.lead.line (name, product_id, product_qty).
+        res = self._find_lead(args.get("name"))
+        if isinstance(res, str):
+            return res
+        lead = res
+        product = self.env["product.product"].search(
+            [("name", "ilike", args.get("product_name") or "")], limit=1)
+        if not product:
+            return f"No se encontró el producto «{args.get('product_name')}»."
+        qty = int(args.get("quantity") or 1)
+        self.env["crm.lead.line"].create({
+            "lead_id": lead.id,
+            "product_id": product.id,
+            "name": product.display_name,
+            "product_qty": qty,
+            "price_unit": product.list_price,
+        })
+        return (f"Producto de interés añadido a «{lead.name}»: "
+                f"{qty} × {product.display_name}.")
+
+    def _list_product_interests(self, args):
+        res = self._find_lead(args.get("name"))
+        if isinstance(res, str):
+            return res
+        lead = res
+        lines = lead.lead_line_ids
+        if not lines:
+            return f"«{lead.name}» no tiene productos de interés registrados."
+        return f"Productos de interés de «{lead.name}»:\n" + "\n".join(
+            f"- {ln.product_qty} × {ln.name}"
+            f"{(' a ' + str(ln.price_unit)) if ln.price_unit else ''}"
+            for ln in lines)
+
+    def _log_phonecall(self, args):
+        # OCA crm_phonecall: state open/pending/done/cancel, direction in/out.
+        res = self._find_lead(args.get("name"))
+        if isinstance(res, str):
+            return res
+        lead = res
+        summary = (args.get("summary") or "").strip()
+        if not summary:
+            return "Falta el resumen de la llamada."
+        direction = "in" if str(args.get("direction")).lower() == "in" else "out"
+        call = self.env["crm.phonecall"].create({
+            "name": summary,
+            "opportunity_id": lead.id,
+            "partner_id": lead.partner_id.id or False,
+            "duration": float(args.get("duration_minutes") or 0),
+            "direction": direction,
+            "state": "done",
+        })
+        return (f"Llamada registrada sobre «{lead.name}»: {call.name} "
+                f"({'recibida' if direction == 'in' else 'realizada'}"
+                f"{(', ' + str(call.duration) + ' min') if call.duration else ''}).")
+
+    def _list_phonecalls(self, args):
+        today = fields.Datetime.now().replace(hour=0, minute=0, second=0)
+        calls = self.env["crm.phonecall"].search(
+            ["|", ("state", "in", ["open", "pending"]), ("date", ">=", today)],
+            limit=20, order="date desc")
+        if not calls:
+            return "No hay llamadas pendientes ni registradas hoy."
+        state_lbl = {"open": "confirmada", "pending": "pendiente",
+                     "done": "realizada", "cancel": "cancelada"}
+        return "\n".join(
+            f"[{c.id}] {c.name} — {c.partner_id.display_name or '—'} — "
+            f"{state_lbl.get(c.state, c.state)} — {c.date or '—'}"
+            f"{(' — ' + c.opportunity_id.name) if c.opportunity_id else ''}"
+            for c in calls)

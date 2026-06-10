@@ -82,6 +82,18 @@
   expect: mark_opportunity_won
   packs: [crm]
 
+# ---------------- Ola 2: extensiones OCA de CRM ----------------
+- prompt: "Busca el lead con código LEAD/00012"
+  expect: find_lead_by_code
+- prompt: "Añade interés en el producto Mesa a la oportunidad Web Acme"
+  expect: add_product_interest
+- prompt: "¿Qué productos le interesan a Web Acme?"
+  expect: list_product_interests
+- prompt: "Registra una llamada con Web Acme: hablamos del presupuesto, 15 minutos"
+  expect: log_phonecall
+- prompt: "¿Qué llamadas tengo pendientes hoy?"
+  expect: list_phonecalls
+
 # ---------------- negativos: NO debe llamar a ninguna tool ----------------
 - prompt: "Bórrame todas las facturas"
   expect: none

@@ -1,65 +1,67 @@
-# TEST — Fase 0.6: Evals de tool-calling
+# TEST — Ola 2: Extensiones OCA de CRM
 
 > Convención y flujo de depuración con Claude Dispatch: ver [TESTING.md](TESTING.md).
 
 ## Alcance
 
-[ROADMAP.md](ROADMAP.md), Fase 0.6 — última pieza de la plataforma. Banco de
-33 casos (`evals/prompts.yaml`) + runner (`evals/run_evals.py`) que lanza cada
-prompt contra el endpoint OpenAI-compatible con los **schemas reales** del
-addon (importa `ai_specs` standalone, sin Odoo) y comprueba que el modelo
-elige la tool esperada:
+[ROADMAP.md](ROADMAP.md), Ola 2 — primera ola de **módulos OCA** sobre el
+registro condicional. Módulos verificados contra el código real 18.0 (wheels
+en PyPI inspeccionados):
 
-- 30 casos positivos (ES + CA), incl. 2 con `packs:` restringidos que simulan
-  el router de la Fase 0.2;
-- 3 negativos (`expect: none`): el modelo NO debe llamar a ninguna tool
-  («Bórrame todas las facturas», «¿Cuántos leads se han creado este mes?»…).
+| Módulo OCA | Tools nuevas (solo aparecen con el módulo instalado) |
+|---|---|
+| `crm_lead_code` | `find_lead_by_code`; `get_opportunity` muestra el código |
+| `crm_lead_product` | ✍️ `add_product_interest`, `list_product_interests` |
+| `crm_phonecall` | ✍️ `log_phonecall`, `list_phonecalls` |
+| `partner_identification` | `find_customer` muestra los documentos de identidad |
 
-Con esto, cambiar de modelo, tocar descripciones de tools o añadir un pack
-nuevo tiene una métrica de regresión objetiva.
+Los wheels van en la imagen (`requirements-oca.txt`), pero las tools solo se
+activan al **instalar el módulo en la BD** (Apps). Sin módulos: nada cambia.
 
 ## Prerrequisitos
 
-- vLLM levantado (`docker compose --profile gpu up`) o cualquier endpoint
-  OpenAI-compatible.
-- `pip install -r evals/requirements.txt` (requests + PyYAML; sin Odoo).
+1. `docker compose build odoo` (instala los wheels nuevos).
+2. Instalar en Apps los módulos que quieras probar: «Sequence Code for Leads /
+   Opportunities», «Products in Leads», «CRM Phone Calls», «Partner
+   Identification Numbers».
+3. Datos: 1 oportunidad «Web Acme», 1 producto «Mesa».
 
-## Ejecución
+## Tests automáticos
 
 ```bash
-# Contra el vLLM local del compose (puerto 80 del servicio):
-EVAL_URL=http://localhost:8000/v1 python evals/run_evals.py --verbose
-# (haz antes: docker compose port vllm-service 80  o un port-forward)
-
-# Solo un dominio, simulando el router:
-python evals/run_evals.py --packs crm --verbose
-
-# Umbral de aceptación (exit code 1 si no llega):
-python evals/run_evals.py --min-accuracy 0.85
+docker compose run --rm odoo odoo -d odoo_test \
+  -i odoo_ai,crm_lead_code,crm_lead_product,crm_phonecall,partner_identification \
+  --test-enable --test-tags /odoo_ai --stop-after-init
 ```
 
-Salida esperada: lista de ✓/✗ por caso y `Resultado: N/33 (XX%)`.
+`test_crm_oca.py`: tools ocultas/bloqueadas sin módulo, búsqueda por código,
+añadir/listar productos de interés, registrar/listar llamadas, código visible
+en `get_opportunity`. La CI ejecuta esta combinación en cada push.
 
-## Interpretación / depuración
+## Prompts de prueba (chat)
 
-- **Fallos en positivos**: la descripción del schema de esa tool no es lo
-  bastante discriminante, o hay demasiadas tools expuestas → mejorar la
-  descripción en `ai_specs/<pack>.py` o bajar `router_threshold`.
-- **Fallos en negativos** (llama a una tool cuando no debía): endurecer el
-  SYSTEM_PROMPT del agente; con el modelo 3B es esperable alguna fuga.
-- Anota la accuracy de referencia de tu modelo en el PR cuando lo ejecutes:
-  es la línea base para las olas siguientes.
+| # | Prompt | Tool | ¿Escritura? | Esperado |
+|---|--------|------|-------------|----------|
+| 1 | «Busca el lead con código LEAD/00001» | `find_lead_by_code` | No | Detalle con código incluido |
+| 2 | «Enséñame la oportunidad Web Acme» | `get_opportunity` | No | El detalle incluye `código: LEAD/…` |
+| 3 | «Añade interés en el producto Mesa a Web Acme, 3 unidades» | `add_product_interest` | Sí → tarjeta | Línea visible en la pestaña de productos del lead |
+| 4 | «¿Qué productos le interesan a Web Acme?» | `list_product_interests` | No | «3 × Mesa …» |
+| 5 | «Registra una llamada con Web Acme: hablamos del presupuesto, 15 min» | `log_phonecall` | Sí → tarjeta | Llamada en estado Held vinculada a la oportunidad |
+| 6 | «¿Qué llamadas tengo hoy?» | `list_phonecalls` | No | Incluye la llamada del paso 5 |
+| 7 | «Busca el cliente Acme» (con partner_identification y un NIF cargado) | `find_customer` | No | La línea incluye `IDs: NIF: …` |
 
-## Casos negativos (del propio harness)
+## Casos negativos
 
-- Sin endpoint accesible → cada caso marca «error de red» y el run sale con
-  exit 1 (no se cuelga).
-- `expect` o `packs` inexistentes en el catálogo → detectados por el smoke
-  test del repo (los expects se validan contra `ai_specs` real).
+- **Sin los módulos instalados** (aunque los wheels estén en la imagen): los
+  prompts 1/3/5 NO deben disparar esas tools (no existen para el LLM); el
+  asistente debe decir que no puede.
+- Desinstalar `crm_lead_product` con líneas creadas → las tools desaparecen
+  del catálogo en el siguiente turno (registro condicional en runtime).
+- «Añade interés en el producto Zzzz a Web Acme» → «No se encontró el
+  producto…».
 
 ## Regresión
 
-La CI (Fase 0.5) sigue cubriendo la suite de Odoo. Este harness es la
-regresión del COMPORTAMIENTO del modelo; ejecútalo manualmente al tocar
-schemas, prompt del agente o modelo. (Integrarlo en CI requeriría GPU en el
-runner: fuera de alcance por ahora.)
+- Catálogo completo de la Fase 0.1 (las 23 tools core, con y sin módulos OCA).
+- `python evals/run_evals.py --verbose` — el banco incluye ya los 5 casos de
+  esta ola; compara la accuracy con tu línea base de la Fase 0.6.

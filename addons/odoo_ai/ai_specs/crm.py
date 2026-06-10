@@ -117,6 +117,45 @@ SPECS = [
         {"name": {"type": "string",
                   "description": "Email o nombre de contacto a comprobar."}},
         ["name"])},
+    # ---------------- Extensiones OCA (Ola 2) ----------------
+    # Cada tool solo aparece si su módulo OCA está instalado (registro
+    # condicional). Verificadas contra el código 18.0 real de OCA/crm y
+    # OCA/partner-contact.
+    {"is_write": False, "requires": ["crm_lead_code"], "method": "_find_lead_by_code",
+     "schema": _fn(
+        "find_lead_by_code",
+        "Busca un lead/oportunidad por su código de referencia (p. ej. LEAD/00012).",
+        {"code": {"type": "string", "description": "Código del lead."}},
+        ["code"])},
+    {"is_write": True, "requires": ["crm_lead_product"], "method": "_add_product_interest",
+     "schema": _fn(
+        "add_product_interest",
+        "Añade un producto de interés (línea de producto) a una oportunidad.",
+        {"name": {"type": "string", "description": "Nombre (o parte) de la oportunidad."},
+         "product_name": {"type": "string", "description": "Nombre del producto."},
+         "quantity": {"type": "number", "description": "Cantidad (por defecto 1)."}},
+        ["name", "product_name"])},
+    {"is_write": False, "requires": ["crm_lead_product"], "method": "_list_product_interests",
+     "schema": _fn(
+        "list_product_interests",
+        "Lista los productos de interés registrados en una oportunidad.",
+        {"name": {"type": "string", "description": "Nombre (o parte) de la oportunidad."}},
+        ["name"])},
+    {"is_write": True, "requires": ["crm_phonecall"], "method": "_log_phonecall",
+     "schema": _fn(
+        "log_phonecall",
+        "Registra una llamada telefónica realizada/recibida sobre una oportunidad.",
+        {"name": {"type": "string", "description": "Nombre (o parte) de la oportunidad."},
+         "summary": {"type": "string", "description": "Resumen de la llamada."},
+         "duration_minutes": {"type": "number", "description": "Duración en minutos."},
+         "direction": {"type": "string",
+                       "description": "in (recibida) o out (realizada); por defecto out."}},
+        ["name", "summary"])},
+    {"is_write": False, "requires": ["crm_phonecall"], "method": "_list_phonecalls",
+     "schema": _fn(
+        "list_phonecalls",
+        "Lista las llamadas pendientes/confirmadas del usuario y las de hoy.",
+        {})},
 ]
 
 DESCRIPTIONS = {
@@ -148,4 +187,12 @@ DESCRIPTIONS = {
             f"{k}={a[k]}" for k in
             ("expected_revenue", "probability", "priority", "tags")
             if a.get(k) is not None) + "."),
+    # ---- Extensiones OCA (Ola 2) ----
+    "add_product_interest": lambda a: (
+        f"Añadir producto de interés a «{a.get('name')}»: "
+        f"{a.get('quantity', 1)} × «{a.get('product_name')}»."),
+    "log_phonecall": lambda a: (
+        f"Registrar llamada ({'recibida' if a.get('direction') == 'in' else 'realizada'}) "
+        f"sobre «{a.get('name')}»: {a.get('summary')}"
+        f"{(' (' + str(a['duration_minutes']) + ' min)') if a.get('duration_minutes') else ''}."),
 }
