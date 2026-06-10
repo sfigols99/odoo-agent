@@ -31,3 +31,5 @@ odoo-addon-helpdesk-mgmt==18.0.*
 # Ola 8 — contratos recurrentes y KPIs (alternativas a Suscripciones/dashboards):
 odoo-addon-contract==18.0.*
 odoo-addon-mis-builder==18.0.*
+# Dependencia (transitiva) de mis_builder: exportación XLSX de los informes.
+odoo-addon-report-xlsx==18.0.*
