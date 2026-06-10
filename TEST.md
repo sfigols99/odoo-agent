@@ -1,29 +1,28 @@
-# TEST — Fase 0.2: Selección dinámica de tools (router de packs)
+# TEST — Fase 0.3: Turno del agente en job asíncrono (queue_job, opcional)
 
 > Convención y flujo de depuración con Claude Dispatch: ver [TESTING.md](TESTING.md).
 
 ## Alcance
 
-[ROADMAP.md](ROADMAP.md), Fase 0.2. Con modelos pequeños, exponer >20-25
-schemas degrada la elección de tool. Este PR añade:
+[ROADMAP.md](ROADMAP.md), Fase 0.3. Hasta ahora cada turno de chat retenía un
+worker de Odoo hasta 2 min × 6 iteraciones. Este PR añade un modo asíncrono
+**opcional y OFF por defecto** (el comportamiento síncrono actual no cambia):
 
-- Parámetro `odoo_ai.enabled_packs` («all» o csv, p. ej. «crm,sale»): limita
-  qué packs ve el asistente, por instancia.
-- **Router de dominio:** si las tools habilitadas superan
-  `odoo_ai.router_threshold` (20 por defecto), una primera llamada barata SIN
-  tools clasifica la intención del usuario en packs y solo se exponen esos.
-  Fallbacks seguros: respuesta no reconocible o fallo del LLM ⇒ se exponen
-  todos los packs habilitados (el agente nunca se queda mudo).
-- `get_tool_schemas(packs=[...])` en `odoo.ai.tools`.
-
-> Nota: con el catálogo actual (23 tools) y el umbral por defecto (20), el
-> router está ACTIVO por defecto ⇒ cada turno hace 1 llamada LLM extra. Para
-> desactivarlo, sube `odoo_ai.router_threshold` (p. ej. 999).
+- `requirements-oca.txt` + instalación del wheel `odoo-addon-queue-job` en la
+  imagen (`Dockerfile.odoo`, `pip --no-deps`).
+- Con `odoo_ai.async_enabled=1` **y** `queue_job` instalado: `chat()` y
+  `execute_pending()` encolan el turno en un job y devuelven
+  `{"type": "queued"}`; la UI hace **polling** (`poll_updates`) cada 1,5 s y
+  pinta los mensajes a medida que el job los persiste.
+- Si el parámetro está activo pero `queue_job` no está instalado/cargado, se
+  degrada a síncrono sin error.
 
 ## Prerrequisitos
 
-Stack base + un LLM (perfil `gpu` o endpoint externo). Parámetros en
-*Ajustes → Técnico → Parámetros del sistema*.
+1. Reconstruir la imagen: `docker compose build odoo` (instala el wheel).
+2. Para el modo asíncrono: en `docker-compose.yml`, usar el `command`
+   alternativo comentado (instala `queue_job`, `--load=base,web,queue_job`,
+   `--workers=2`) y poner `odoo_ai.async_enabled = 1` en Parámetros del sistema.
 
 ## Tests automáticos
 
@@ -32,35 +31,38 @@ docker compose run --rm odoo odoo -d odoo_test -i odoo_ai \
   --test-enable --stop-after-init
 ```
 
-Nuevos en `test_routing.py`: filtro por `enabled_packs`, fallback con config
-inválida, sin llamada de router bajo el umbral, router subselecciona por
-dominio (llamada SIN tools), fallback con respuesta basura y con error de LLM,
-filtro `packs` de `get_tool_schemas`.
+Nuevos en `test_async.py`: async desactivado por defecto (respuesta directa),
+parámetro activo sin queue_job ⇒ sigue síncrono, `poll_updates` incremental
+(mensajes nuevos y luego vacío) y `poll_updates` expone la confirmación
+pendiente reconstruida.
 
 ## Prompts de prueba (chat)
 
-Con el umbral por defecto (router activo):
+**Modo síncrono (por defecto):** cualquier prompt del catálogo de la Fase 0.1
+debe comportarse exactamente igual que antes.
 
-| # | Prompt | Comportamiento esperado |
+**Modo asíncrono (activado según Prerrequisitos):**
+
+| # | Acción | Comportamiento esperado |
 |---|--------|--------------------------|
-| 1 | «¿Cuánto stock hay del producto Mesa?» | En el log de odoo aparece `Router de packs: [...] -> ['stock']` y responde con datos de stock |
-| 2 | «Marca Web Acme como ganada» | Router → `crm`; tarjeta de confirmación normal |
-| 3 | «¿Qué facturas están pendientes de cobro?» | Router → `account`; lista facturas |
-| 4 | «Hola, ¿qué sabes hacer?» | Sin dominio claro ⇒ router devuelve all/garbage ⇒ todos los packs; respuesta normal |
-| 5 | (con `odoo_ai.enabled_packs = crm`) «¿Cuánto stock hay de Mesa?» | El pack stock NO está expuesto: el asistente dice que no puede consultarlo (no inventa cifras) |
-
-Verifica el routing en vivo con: `docker compose logs -f odoo | grep "Router de packs"`.
+| 1 | «¿Qué oportunidades abiertas tenemos?» | El spinner «Pensando…» aparece al instante (la RPC vuelve enseguida); la respuesta llega por polling. En *Técnico → Queue Job* aparece el job `odoo_ai: turno de chat` en done |
+| 2 | «Crea un lead para Acme» | Al terminar el job aparece la tarjeta Confirmar/Cancelar (reconstruida por polling) |
+| 3 | Confirmar la tarjeta | Job `odoo_ai: confirmación`; el lead existe en CRM y la respuesta final llega por polling |
+| 4 | Mandar un prompt y navegar a otra vista y volver | Sin errores JS en consola (el polling se detiene al desmontar el componente) |
+| 5 | Dos usuarios a la vez con prompts lentos | Los workers no quedan bloqueados: la UI de ambos responde, los turnos corren como jobs |
 
 ## Casos negativos
 
-- Apaga vLLM y pregunta algo → mensaje de error amable (el fallo del router no
-  rompe el turno: primero cae el router a "todos" y después el turno principal
-  devuelve el error controlado).
-- `odoo_ai.enabled_packs = noexiste` → se comporta como `all` (fallback).
-- `odoo_ai.router_threshold = 999` → ningún `Router de packs` en logs.
+- `odoo_ai.async_enabled=1` SIN el command alternativo (queue_job no cargado)
+  → todo sigue funcionando en síncrono.
+- Parar vLLM en modo asíncrono → el job termina, el polling cesa y aparece el
+  mensaje de error amable del agente.
+- ⚠️ Limitación conocida: si un job muere de forma anómala (kill -9, bug), la
+  conversación puede quedar con `is_thinking=True` (spinner). Workaround:
+  reintentar el job desde *Técnico → Queue Job* o crear conversación nueva.
+  Pendiente de endurecer cuando el modo async se haga por defecto.
 
 ## Regresión
 
-Catálogo completo del TEST.md de la Fase 0.1: mismas tools, mismas tarjetas de
-confirmación. La única diferencia observable debe ser la línea de log del
-router y (con packs restringidos) la indisponibilidad explícita del resto.
+Catálogo completo de la Fase 0.1 en modo síncrono (default): sin cambios.
+Verificar también el routing de la Fase 0.2 (logs `Router de packs`).

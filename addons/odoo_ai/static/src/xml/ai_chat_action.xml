@@ -29,7 +29,7 @@
                         </div>
                     </div>
                 </t>
-                <t t-if="state.loading">
+                <t t-if="state.loading or state.thinking">
                     <div class="text-muted o_ai_loading">
                         <i class="fa fa-spinner fa-spin me-1"/> Pensando…
                     </div>
@@ -43,7 +43,7 @@
                           t-att-disabled="state.pending"/>
                 <button class="btn btn-primary"
                         t-on-click="sendMessage"
-                        t-att-disabled="state.loading">
+                        t-att-disabled="state.loading or state.thinking">
                     Enviar
                 </button>
             </div>

@@ -1,8 +1,10 @@
 /** @odoo-module **/
 
-import { Component, useState, onWillStart, onPatched, useRef } from "@odoo/owl";
+import { Component, useState, onWillStart, onPatched, onWillUnmount, useRef } from "@odoo/owl";
 import { registry } from "@web/core/registry";
 import { useService } from "@web/core/utils/hooks";
+
+const POLL_INTERVAL_MS = 1500;
 
 export class AiChatAction extends Component {
     static template = "odoo_ai.ChatAction";
@@ -14,9 +16,11 @@ export class AiChatAction extends Component {
             messages: [], // {role: 'user'|'assistant', content}
             input: "",
             loading: false,
+            thinking: false, // modo asíncrono: job en proceso (Fase 0.3)
             pending: null, // {tool_name, arguments, description}
         });
         this.threadRef = useRef("thread");
+        this.pollTimer = null;
 
         onWillStart(async () => {
             const ids = await this.orm.create("odoo.ai.conversation", [
@@ -25,6 +29,7 @@ export class AiChatAction extends Component {
             this.conversationId = ids[0];
         });
         onPatched(() => this._scrollToBottom());
+        onWillUnmount(() => this._stopPolling());
     }
 
     _scrollToBottom() {
@@ -38,8 +43,20 @@ export class AiChatAction extends Component {
         this.state.messages.push({ role, content });
     }
 
+    _stopPolling() {
+        if (this.pollTimer) {
+            clearTimeout(this.pollTimer);
+            this.pollTimer = null;
+        }
+    }
+
     _handle(res) {
         if (!res) {
+            return;
+        }
+        if (res.type === "queued") {
+            // Modo asíncrono: el turno corre en un job; recogemos por polling.
+            this._poll(res.last_message_id || 0);
             return;
         }
         if (res.type === "confirm") {
@@ -56,9 +73,38 @@ export class AiChatAction extends Component {
         }
     }
 
+    async _poll(lastId) {
+        this.state.thinking = true;
+        let res;
+        try {
+            res = await this.orm.call("odoo.ai.conversation", "poll_updates", [
+                [this.conversationId],
+                lastId,
+            ]);
+        } catch {
+            // Error transitorio de red: reintenta en el siguiente tick.
+            this.pollTimer = setTimeout(() => this._poll(lastId), POLL_INTERVAL_MS);
+            return;
+        }
+        for (const m of res.messages) {
+            this._push("assistant", m.content);
+        }
+        if (res.thinking) {
+            this.pollTimer = setTimeout(
+                () => this._poll(res.last_message_id), POLL_INTERVAL_MS);
+            return;
+        }
+        this.state.thinking = false;
+        this.state.pending = res.pending || null;
+    }
+
+    get busy() {
+        return this.state.loading || this.state.thinking;
+    }
+
     async sendMessage() {
         const text = this.state.input.trim();
-        if (!text || this.state.loading || this.state.pending) {
+        if (!text || this.busy || this.state.pending) {
             return;
         }
         this._push("user", text);
@@ -76,7 +122,7 @@ export class AiChatAction extends Component {
     }
 
     async confirm(ok) {
-        if (this.state.loading || !this.state.pending) {
+        if (this.busy || !this.state.pending) {
             return;
         }
         const pending = this.state.pending;

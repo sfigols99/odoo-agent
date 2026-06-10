@@ -32,5 +32,11 @@
             <field name="key">odoo_ai.router_threshold</field>
             <field name="value">20</field>
         </record>
+        <!-- Fase 0.3: turno del agente en job asíncrono (requiere queue_job
+             instalado y jobrunner activo: workers>0 + server_wide_modules). -->
+        <record id="cfg_async_enabled" model="ir.config_parameter">
+            <field name="key">odoo_ai.async_enabled</field>
+            <field name="value">0</field>
+        </record>
     </data>
 </odoo>

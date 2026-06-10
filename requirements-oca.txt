@@ -1,0 +1,6 @@
+# Módulos OCA instalados como wheels de PyPI dentro de la imagen de Odoo.
+# Se instalan con --no-deps (la dependencia "odoo" del wheel no es pip-instalable
+# en la imagen oficial); las dependencias python reales ya están en la imagen.
+#
+# Fase 0.3 — ejecución asíncrona del agente:
+odoo-addon-queue-job==18.0.*
