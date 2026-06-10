@@ -33,8 +33,9 @@ class AiToolsPurchase(models.AbstractModel):
                 "name": product.display_name,
                 "product_id": product.id,
                 "product_qty": qty,
-                # Odoo 17/18 renombró product_uom -> product_uom_id en las líneas.
-                "product_uom_id": (product.uom_po_id or product.uom_id).id,
+                # En purchase.order.line de Odoo 18 el campo de UoM es
+                # product_uom (no product_uom_id, que sí existe en sale.order.line).
+                "product_uom": (product.uom_po_id or product.uom_id).id,
                 "price_unit": product.standard_price,
                 "date_planned": fields.Datetime.now(),
             })],
