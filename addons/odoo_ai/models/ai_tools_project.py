@@ -20,7 +20,9 @@ class AiToolsProject(models.AbstractModel):
         if args.get("description"):
             vals["description"] = args["description"]
         if args.get("assignee"):
-            user = self.env["res.users"].search(
+            # active_test=False: algunos usuarios reales (p. ej. el bot del
+            # sistema) están inactivos pero son asignables.
+            user = self.env["res.users"].with_context(active_test=False).search(
                 [("name", "ilike", args["assignee"])], limit=1)
             if not user:
                 return f"No se encontró el usuario «{args['assignee']}»."

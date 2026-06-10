@@ -65,7 +65,7 @@ class AiToolsHelpdesk(models.AbstractModel):
         if isinstance(res, str):
             return res
         ticket = res
-        user = self.env["res.users"].search(
+        user = self.env["res.users"].with_context(active_test=False).search(
             [("name", "ilike", args.get("user") or "")], limit=1)
         if not user:
             return f"No se encontró el usuario «{args.get('user')}»."
