@@ -1,6 +1,7 @@
 import logging
 
 from odoo import models
+from odoo.tools import config
 
 _logger = logging.getLogger(__name__)
 
@@ -51,11 +52,18 @@ class AiAudit(models.AbstractModel):
                 # penaliza; cambia a 'full' si necesitas el diff de campos.
                 "log_type": "fast",
             })
-            try:
-                rule.subscribe()
-            except Exception:  # noqa: BLE001 - la regla queda creada en draft
-                _logger.exception("odoo_ai: no se pudo suscribir la regla %s",
-                                  rule_name)
+            # subscribe() parchea create/write/unlink en el modelo auditado
+            # (auditlog_ruled_*). Bajo --test-enable, el detector de fugas de
+            # Odoo 18 considera esos atributos añadidos en runtime como una
+            # fuga y hace fallar tests ajenos. En modo test creamos la regla
+            # pero NO la suscribimos (la auditoría real se activa en producción
+            # vía post_init_hook / la acción de servidor).
+            if not config["test_enable"]:
+                try:
+                    rule.subscribe()
+                except Exception:  # noqa: BLE001 - la regla queda en borrador
+                    _logger.exception(
+                        "odoo_ai: no se pudo suscribir la regla %s", rule_name)
             created.append(model_name)
         if created:
             _logger.info("odoo_ai: reglas de auditoría creadas para %s", created)
