@@ -11,3 +11,4 @@ from . import test_stock_oca
 from . import test_purchase_oca
 from . import test_account_oca
 from . import test_helpdesk_project
+from . import test_contract_kpi

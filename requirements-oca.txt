@@ -28,3 +28,6 @@ odoo-addon-purchase-order-type==18.0.*
 odoo-addon-account-payment-order==18.0.*
 # Ola 7 — helpdesk (alternativa gratuita al Helpdesk Enterprise):
 odoo-addon-helpdesk-mgmt==18.0.*
+# Ola 8 — contratos recurrentes y KPIs (alternativas a Suscripciones/dashboards):
+odoo-addon-contract==18.0.*
+odoo-addon-mis-builder==18.0.*

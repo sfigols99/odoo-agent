@@ -150,6 +150,18 @@
 - prompt: "¿Qué tareas tengo pendientes?"
   expect: list_my_tasks
 
+# ---------------- Ola 8: contratos + KPIs ----------------
+- prompt: "¿Qué contratos tenemos activos y cuándo se facturan?"
+  expect: list_active_contracts
+- prompt: "¿Qué contratos vencen el mes que viene?"
+  expect: list_contracts_to_renew
+- prompt: "Genera la factura del periodo del contrato Mantenimiento Acme"
+  expect: generate_contract_invoice
+- prompt: "¿Qué informes de KPIs tenemos?"
+  expect: list_kpi_reports
+- prompt: "¿Cómo va el informe de KPIs de ventas este mes?"
+  expect: get_kpi_report
+
 # ---------------- negativos: NO debe llamar a ninguna tool ----------------
 - prompt: "Bórrame todas las facturas"
   expect: none

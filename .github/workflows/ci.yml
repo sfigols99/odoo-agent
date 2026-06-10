@@ -65,7 +65,7 @@ jobs:
           odoo -d test_odoo_ai \
             --addons-path="$GITHUB_WORKSPACE/addons,/usr/lib/python3/dist-packages/odoo/addons" \
             --db_host=postgres --db_user=odoo --db_password=odoo \
-            -i odoo_ai,auditlog,queue_job,crm_lead_code,crm_lead_product,crm_phonecall,partner_identification,sale_order_type,sale_exception,sale_tier_validation,stock_available_unreserved,stock_inventory,purchase_request,purchase_order_type,account_payment_order,helpdesk_mgmt,project \
+            -i odoo_ai,auditlog,queue_job,crm_lead_code,crm_lead_product,crm_phonecall,partner_identification,sale_order_type,sale_exception,sale_tier_validation,stock_available_unreserved,stock_inventory,purchase_request,purchase_order_type,account_payment_order,helpdesk_mgmt,project,contract,mis_builder \
             --test-enable --test-tags /odoo_ai \
             --stop-after-init --log-level=test \
             2>&1 | tee /tmp/odoo-tests.log

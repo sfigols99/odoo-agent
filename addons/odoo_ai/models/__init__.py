@@ -9,5 +9,7 @@ from . import ai_tools_account
 from . import ai_tools_purchase
 from . import ai_tools_helpdesk
 from . import ai_tools_project
+from . import ai_tools_contract
+from . import ai_tools_kpi
 from . import ai_audit
 from . import ai_agent
