@@ -15,6 +15,8 @@ odoo-addon-partner-identification==18.0.*
 # Ola 3 — ventas (tipos de pedido, excepciones, aprobaciones por niveles):
 odoo-addon-sale-order-type==18.0.*
 odoo-addon-sale-exception==18.0.*
+# Dependencia de sale_exception:
+odoo-addon-base-exception==18.0.*
 odoo-addon-base-tier-validation==18.0.*
 odoo-addon-sale-tier-validation==18.0.*
 # Ola 4 — almacén (stock sin reservar, ajustes de inventario agrupados):
@@ -26,5 +28,8 @@ odoo-addon-purchase-request==18.0.*
 odoo-addon-purchase-order-type==18.0.*
 # Ola 6 — finanzas (remesas/órdenes de pago):
 odoo-addon-account-payment-order==18.0.*
+# Dependencias de account_payment_order:
+odoo-addon-account-payment-partner==18.0.*
+odoo-addon-account-payment-mode==18.0.*
 # Ola 7 — helpdesk (alternativa gratuita al Helpdesk Enterprise):
 odoo-addon-helpdesk-mgmt==18.0.*
