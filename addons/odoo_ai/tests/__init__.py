@@ -9,3 +9,4 @@ from . import test_crm_oca
 from . import test_sale_oca
 from . import test_stock_oca
 from . import test_purchase_oca
+from . import test_account_oca
