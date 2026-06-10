@@ -1,60 +1,59 @@
-# TEST — Ola 4: Almacén (albaranes core + OCA stock)
+# TEST — Ola 5: Compras (solicitudes internas + tipos de pedido, OCA)
 
 > Convención y flujo de depuración con Claude Dispatch: ver [TESTING.md](TESTING.md).
 
 ## Alcance
 
-[ROADMAP.md](ROADMAP.md), Ola 4. Catálogo total: 37 tools.
+[ROADMAP.md](ROADMAP.md), Ola 5. Catálogo total: 40 tools.
 
-**Core stock (sin OCA):**
-- `list_pending_pickings`: albaranes en espera/confirmados/preparados.
-- ✍️ `validate_picking`: valida una transferencia preparada; si Odoo pide una
-  decisión (p. ej. backorder), lo explica y NO decide por su cuenta.
+| Módulo OCA | Qué añade |
+|---|---|
+| `purchase_request` | ✍️ `create_purchase_request` (crea + envía a aprobación), `list_purchase_requests`, ✍️ `approve_purchase_request` |
+| `purchase_order_type` | `create_purchase_order` acepta `order_type` (guardado por campo) |
 
-**OCA (verificado contra código 18.0 real):**
-- `stock_available_unreserved`: `check_stock` añade «X sin reservar».
-- `stock_inventory`: ✍️ `start_inventory_adjustment` (crea el ajuste agrupado
-  y lo pone en progreso) + `list_inventory_adjustments`.
+> Gate aplicado: `purchase_discount` **no tiene wheel 18.0** en PyPI →
+> pospuesto (anotado en requirements-oca.txt).
+
+El flujo «necesito X, que alguien lo apruebe» es ideal para chat: el empleado
+lo pide en una frase y el responsable lo aprueba en otra.
 
 ## Prerrequisitos
 
 1. `docker compose build odoo`.
-2. Apps: instalar «Stock Available Unreserved» y «Stock Inventory Adjustment».
-3. Datos: producto almacenable con stock y algún albarán pendiente (crea un
-   pedido de venta confirmado o una transferencia interna).
+2. Apps: «Purchase Request», «Purchase Order Type».
+3. Usuarios: uno normal (solicita) y uno con grupo *Purchase Request Manager*
+  (aprueba) para probar el flujo completo con permisos reales.
 
 ## Tests automáticos
 
 ```bash
 docker compose run --rm odoo odoo -d odoo_test \
-  -i odoo_ai,stock_available_unreserved,stock_inventory \
+  -i odoo_ai,purchase_request,purchase_order_type \
   --test-enable --test-tags /odoo_ai --stop-after-init
 ```
 
-`test_stock_oca.py`: listado de pendientes, albarán inexistente, **flujo real
-de validación** (quant → transferencia interna → confirmar → asignar →
-validar), «sin reservar» con el módulo, flujo de ajuste de inventario, tools
-ocultas sin módulo. La CI ejecuta esta combinación.
+`test_purchase_oca.py`: flujo completo (crear → to_approve → listar →
+aprobar), aprobación en estado incorrecto, tipo sin módulo (mensaje claro, no
+crea nada), tipo con módulo, tools ocultas. La CI ejecuta esta combinación.
 
 ## Prompts de prueba (chat)
 
 | # | Prompt | Tool | ¿Escritura? | Esperado |
 |---|--------|------|-------------|----------|
-| 1 | «¿Qué albaranes tenemos pendientes?» | `list_pending_pickings` | No | Lista con tipo, partner, estado y fecha prevista |
-| 2 | «Valida el albarán WH/INT/00005» | `validate_picking` | Sí → tarjeta | Albarán en done; stock movido |
-| 3 | «Valida WH/OUT/00007» (con cantidades parciales) | `validate_picking` | Sí → tarjeta | Mensaje «requiere una decisión adicional (backorder)»; nada validado a medias |
-| 4 | «¿Cuánto stock hay de Mesa?» (con unreserved) | `check_stock` | No | Incluye «… sin reservar» |
-| 5 | «Inicia un ajuste de inventario para Mesa» | `start_inventory_adjustment` | Sí → tarjeta | Ajuste en «in progress» visible en Inventario → Ajustes |
-| 6 | «¿Qué ajustes de inventario están abiertos?» | `list_inventory_adjustments` | No | Incluye el del paso 5 |
+| 1 | «Necesito 10 tornillos M4 para el taller, pide que los compren» | `create_purchase_request` | Sí → tarjeta | Solicitud en «Por aprobar» visible en Compras → Solicitudes |
+| 2 | «¿Qué solicitudes de compra hay abiertas?» | `list_purchase_requests` | No | Incluye la del paso 1 con solicitante y líneas |
+| 3 | (como manager) «Aprueba la solicitud PR00001» | `approve_purchase_request` | Sí → tarjeta | Estado «Aprobada» |
+| 4 | «Crea un pedido de compra a Proveedor SA de tipo Importación: 50 tornillos» | `create_purchase_order` | Sí → tarjeta | RFQ con el tipo asignado |
 
 ## Casos negativos
 
-- Validar un albarán ya hecho → «ya está validado», sin tocar nada.
-- Validar uno en borrador → «no está listo (estado: draft)».
-- Paso 5 sin `stock_inventory` instalado → la tool no existe para el LLM.
-- Producto inexistente en el paso 5 → «No se encontró el producto…».
+- Paso 3 con el usuario normal (sin grupo manager) → error de permisos en
+  texto; la solicitud NO cambia de estado.
+- Aprobar una solicitud en borrador → «no está pendiente de aprobación».
+- Paso 4 sin `purchase_order_type` → mensaje claro y NO se crea el pedido.
+- Producto inexistente en el paso 1 → «No se encontró el producto…».
 
 ## Regresión
 
-Catálogo previo completo; `check_stock` SIN el módulo unreserved debe mostrar
-exactamente el formato de siempre. Evals: 48 casos (4 nuevos).
+`create_purchase_order` SIN `order_type` idéntico a antes. Catálogo previo
+completo. Evals: 51 casos (3 nuevos).

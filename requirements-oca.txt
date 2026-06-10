@@ -20,3 +20,7 @@ odoo-addon-sale-tier-validation==18.0.*
 # Ola 4 — almacén (stock sin reservar, ajustes de inventario agrupados):
 odoo-addon-stock-available-unreserved==18.0.*
 odoo-addon-stock-inventory==18.0.*
+# Ola 5 — compras (solicitudes internas y tipos de pedido).
+# NOTA: purchase_discount NO tiene wheel 18.0 publicado -> pospuesto (gate).
+odoo-addon-purchase-request==18.0.*
+odoo-addon-purchase-order-type==18.0.*
