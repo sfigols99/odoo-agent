@@ -1,61 +1,69 @@
-# TEST — Ola 7: Helpdesk (OCA) + Proyectos (core condicional)
+# TEST — Ola 8: Contratos recurrentes + KPIs (OCA)
 
 > Convención y flujo de depuración con Claude Dispatch: ver [TESTING.md](TESTING.md).
 
 ## Alcance
 
-[ROADMAP.md](ROADMAP.md), Ola 7. Dos packs NUEVOS (catálogo: 50 tools, 7 packs):
+[ROADMAP.md](ROADMAP.md), Ola 8 — **última ola del roadmap inicial**. Dos
+packs nuevos (catálogo final: 55 tools, 9 packs):
 
-**Pack `helpdesk`** — OCA `helpdesk_mgmt` (alternativa gratuita al Helpdesk de
-Enterprise; código 18.0 verificado):
-- ✍️ `create_ticket`, `list_open_tickets` (con `only_mine`), `get_ticket`,
-  ✍️ `assign_ticket`, ✍️ `close_ticket` (mueve a una etapa con `closed=True`).
+**Pack `contract`** — OCA `contract` (alternativa gratuita a Suscripciones):
+- `list_active_contracts` (próxima fecha de facturación), 
+  `list_contracts_to_renew` (fin dentro de N días),
+  ✍️ `generate_contract_invoice` (solo si el periodo ya venció; nunca factura
+  por adelantado).
 
-**Pack `project`** — módulo **core** `project`, vía registro condicional (el
-addon NO depende de él; demuestra que `requires` sirve también para core
-opcional):
-- ✍️ `create_task` (con asignado opcional), `list_my_tasks`.
+**Pack `kpi`** — OCA `mis_builder`:
+- `list_kpi_reports`, `get_kpi_report` (calcula la matriz del informe y la
+  resume por filas/periodos; el LLM la explica en lenguaje natural).
 
 ## Prerrequisitos
 
 1. `docker compose build odoo`.
-2. Apps: «Helpdesk Management» (OCA) y «Proyecto» (core).
-3. En Helpdesk, comprobar que existe alguna etapa marcada como *cerrada*.
+2. Apps: «Contracts» (OCA) y «MIS Builder».
+3. Datos: un contrato con línea recurrente y fecha pasada (para generar
+   factura) y un informe MIS configurado (p. ej. la plantilla de demo de
+   mis_builder).
 
 ## Tests automáticos
 
 ```bash
 docker compose run --rm odoo odoo -d odoo_test \
-  -i odoo_ai,helpdesk_mgmt,project \
+  -i odoo_ai,contract,mis_builder \
   --test-enable --test-tags /odoo_ai --stop-after-init
 ```
 
-`test_helpdesk_project.py`: ciclo completo del ticket (crear → listar →
-detalle → asignar → cerrar), ticket ya cerrado, tarea con proyecto y asignado,
-proyecto inexistente (lista disponibles), tools ocultas sin módulos.
+`test_contract_kpi.py`: listado de contratos, guard «sin líneas recurrentes»,
+contratos a renovar (fecha pasada), tools KPI (listado + informe inexistente),
+tools ocultas sin módulos.
 
 ## Prompts de prueba (chat)
 
 | # | Prompt | Tool | ¿Escritura? | Esperado |
 |---|--------|------|-------------|----------|
-| 1 | «Abre un ticket: el cliente Acme no puede entrar al portal» | `create_ticket` | Sí → tarjeta | Ticket con número (HT…) en la primera etapa |
-| 2 | «¿Qué tickets tenemos abiertos?» | `list_open_tickets` | No | Incluye el del paso 1 |
-| 3 | «¿Cómo está el ticket HT00001?» | `get_ticket` | No | Detalle: contacto, etapa, asignado |
-| 4 | «Asigna el ticket HT00001 a Maria» | `assign_ticket` | Sí → tarjeta | user_id cambiado |
-| 5 | «Cierra el HT00001, ya está resuelto» | `close_ticket` | Sí → tarjeta | Etapa cerrada + nota en el chatter |
-| 6 | «Crea una tarea en el proyecto Web: revisar el formulario de contacto» | `create_task` | Sí → tarjeta | Tarea visible en el tablero del proyecto |
-| 7 | «¿Qué tareas tengo pendientes?» | `list_my_tasks` | No | Solo las tuyas, con vencimiento si lo hay |
+| 1 | «¿Qué contratos tenemos activos y cuándo se facturan?» | `list_active_contracts` | No | Contratos con próxima factura y fecha fin |
+| 2 | «¿Qué contratos vencen el mes que viene?» | `list_contracts_to_renew` | No | Solo los que terminan en ≤30 días |
+| 3 | «Genera la factura del contrato Mantenimiento Acme» | `generate_contract_invoice` | Sí → tarjeta | Factura creada SOLO si el periodo venció; el nº de factura aparece en la respuesta |
+| 4 | «¿Qué informes de KPIs tenemos?» | `list_kpi_reports` | No | Nombres de los MIS configurados |
+| 5 | «¿Cómo va el informe de ventas de este mes?» | `get_kpi_report` | No | Valores por KPI/periodo, explicados por el asistente |
 
 ## Casos negativos
 
-- Cerrar un ticket ya cerrado → «ya está cerrado».
-- Sin etapa de cierre configurada → mensaje que lo explica, sin mover nada.
-- «Crea una tarea en el proyecto Inexistente…» → lista los proyectos
-  disponibles.
-- Sin `helpdesk_mgmt`/`project` instalados → las tools no existen para el LLM.
+- Paso 3 con el periodo aún no vencido → «aún no ha vencido… no se ha
+  generado nada».
+- Paso 3 con un contrato sin líneas recurrentes → mensaje claro.
+- Informe KPI inexistente → lista los disponibles.
+- Sin `contract`/`mis_builder` → tools invisibles para el LLM.
 
 ## Regresión
 
-Catálogo previo completo. Con 50 tools, el **router de la Fase 0.2 es ya
-imprescindible**: verifica en logs que `Router de packs` enruta a `helpdesk` /
-`project` correctamente. Evals: 61 casos (7 nuevos).
+Catálogo completo de las 8 olas (55 tools). Con este tamaño, ejecuta también:
+
+```bash
+python evals/run_evals.py --verbose          # 66 casos
+python evals/run_evals.py --packs crm        # comprueba el subset del router
+```
+
+y compara la accuracy global con tu línea base — es el indicador de si el
+modelo actual (3B/7B) sigue eligiendo bien con el catálogo completo o hay que
+bajar `router_threshold` / subir de modelo.

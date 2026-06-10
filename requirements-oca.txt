@@ -33,3 +33,17 @@ odoo-addon-account-payment-partner==18.0.*
 odoo-addon-account-payment-mode==18.0.*
 # Ola 7 — helpdesk (alternativa gratuita al Helpdesk Enterprise):
 odoo-addon-helpdesk-mgmt==18.0.*
+# Ola 8 — contratos recurrentes y KPIs (alternativas a Suscripciones/dashboards):
+odoo-addon-contract==18.0.*
+odoo-addon-mis-builder==18.0.*
+# Dependencias (transitivas) de mis_builder:
+#   report_xlsx (export XLSX), date_range (rangos de fecha de los informes) y
+#   la librería python openupgradelib. Como instalamos con --no-deps, hay que
+#   listarlas explícitamente.
+odoo-addon-report-xlsx==18.0.*
+odoo-addon-date-range==18.0.*
+openupgradelib
+# Helper de test que usan las suites de varios módulos OCA (p. ej. date_range).
+# Necesario porque --test-enable importa los tests de TODOS los módulos
+# instalados, aunque luego --test-tags solo ejecute los de odoo_ai.
+odoo-test-helper

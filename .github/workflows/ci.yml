@@ -64,15 +64,15 @@ jobs:
         run: |
           pip3 install --no-cache-dir --no-deps --break-system-packages \
             -r requirements-oca.txt
-      # Paso 1: INSTALAR el stack (sin tests). Así se ejercita el registro
-      # condicional con los módulos realmente presentes.
+      # Paso 1: INSTALAR todo el stack OCA (sin tests). Así se ejercita el
+      # registro condicional con los módulos realmente presentes.
       - name: Instalar el stack OCA completo
         run: |
           set -o pipefail
           odoo -d test_odoo_ai \
             --addons-path="$GITHUB_WORKSPACE/addons,/usr/lib/python3/dist-packages/odoo/addons" \
             --db_host=postgres --db_user=odoo --db_password=odoo \
-            -i odoo_ai,auditlog,queue_job,crm_lead_code,crm_lead_product,crm_phonecall,partner_identification,sale_order_type,sale_exception,sale_tier_validation,stock_available_unreserved,stock_inventory,purchase_request,purchase_order_type,account_payment_order,helpdesk_mgmt,project \
+            -i odoo_ai,auditlog,queue_job,crm_lead_code,crm_lead_product,crm_phonecall,partner_identification,sale_order_type,sale_exception,sale_tier_validation,stock_available_unreserved,stock_inventory,purchase_request,purchase_order_type,account_payment_order,helpdesk_mgmt,project,contract,report_xlsx,date_range,mis_builder \
             --stop-after-init --log-level=warn \
             2>&1 | tee /tmp/odoo-install.log
       # Paso 2: TESTEAR solo nuestro addon. --test-tags /odoo_ai limita qué
