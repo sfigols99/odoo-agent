@@ -1,27 +1,27 @@
-# TEST — Ola 1: Automatizaciones de CRM + registro condicional (PR #2)
+# TEST — Fase 0.1: Tool packs por dominio (refactor)
 
 > Convención y flujo de depuración con Claude Dispatch: ver [TESTING.md](TESTING.md).
 
 ## Alcance
 
-- Registro condicional de tools (`requires=["modulo"]` en `TOOL_SPECS`).
-- Pack CRM: consulta (`get_opportunity`), ciclo de vida
-  (`convert_lead_to_opportunity`, `set_opportunity_stage`,
-  `mark_opportunity_won`, `mark_opportunity_lost`), asignación/actividades
-  (`assign_opportunity`, `schedule_activity`, `log_note`), enriquecimiento
-  (`update_opportunity_fields`) e higiene (`list_stale_opportunities`,
-  `find_duplicate_opportunities`).
-- Punto del roadmap: **Ola 1** de [ROADMAP.md](ROADMAP.md).
+Refactor estructural ([ROADMAP.md](ROADMAP.md), Fase 0.1) — **sin cambio de
+comportamiento esperado**:
+
+- Specs movidos a `addons/odoo_ai/ai_specs/` (paquete **puro**, sin imports de
+  Odoo, importable standalone — lo usará el harness de evals de la Fase 0.6),
+  partidos por pack: `stock`, `crm`, `sale`, `account`, `purchase`.
+- Cada spec lleva ahora la clave `pack`; cada pack declara `PACK_DESCRIPTION`
+  (la usará el router de la Fase 0.2).
+- Implementaciones movidas a mixins por dominio (`models/ai_tools_<pack>.py`)
+  que heredan de `odoo.ai.tools`; `models/ai_tools.py` queda solo con el
+  registro condicional y el despacho. Nuevo método `list_packs()`.
+- Re-export de `TOOL_SPECS`/`DESCRIPTIONS` en `models.ai_tools` por
+  compatibilidad.
 
 ## Prerrequisitos
 
-- Stack arrancado: `docker compose up --build` (+ `--profile gpu` o un endpoint
-  OpenAI-compatible en `odoo_ai.vllm_url`).
-- Módulo `crm` instalado (ya es dependencia del addon).
-- Datos de prueba: crea a mano en CRM al menos
-  - 1 lead «Lead Acme» (tipo lead, contacto «Joan Puig», email `joan@acme.com`);
-  - 2 oportunidades «Web Acme» y «Web Bcorp» en etapas distintas;
-  - 1 usuario comercial adicional (p. ej. «Maria») y 1 usuario sin grupo de CRM.
+Los mismos del stack base: `docker compose up --build` (+ LLM por perfil `gpu`
+o endpoint externo). No hay módulos nuevos.
 
 ## Tests automáticos
 
@@ -30,82 +30,43 @@ docker compose run --rm odoo odoo -d odoo_test -i odoo_ai \
   --test-enable --stop-after-init
 ```
 
-Esperado: `0 failed, 0 error(s)`. Cubre registro condicional
-(`test_tools_registry.py`), bucle del agente (`test_agent_loop.py`) y cada tool
-de CRM sobre el ORM real (`test_crm_automations.py`).
+Esperado: `0 failed, 0 error(s)`. Novedades en `test_packs.py`:
+
+- todo spec pertenece a un pack válido;
+- **todo método de tool resuelve sobre `odoo.ai.tools`** (detecta mixins no
+  importados en `models/__init__.py`);
+- toda tool de escritura tiene descripción de confirmación;
+- `list_packs()` devuelve los 5 packs con descripción;
+- los imports históricos desde `models.ai_tools` siguen funcionando.
+
+Verificación standalone (sin Odoo) de que los specs son puros:
+
+```bash
+python3 -c "import sys; sys.path.insert(0,'addons/odoo_ai'); import ai_specs; \
+  print(len(ai_specs.TOOL_SPECS), 'tools en', ai_specs.PACK_NAMES)"
+```
 
 ## Prompts de prueba (chat)
 
-| # | Prompt | Tool esperada | ¿Escritura? | Resultado esperado |
-|---|--------|---------------|-------------|--------------------|
-| 1 | «Enséñame el detalle de la oportunidad Web Acme» | `get_opportunity` | No | Etapa, comercial, importe, probabilidad y próxima actividad reales |
-| 2 | «Convierte el lead Lead Acme en oportunidad» | `convert_lead_to_opportunity` | Sí → tarjeta | Tras confirmar, el lead pasa a tipo oportunidad en CRM |
-| 3 | «Mueve Web Acme a la etapa Propuesta» | `set_opportunity_stage` | Sí → tarjeta | Etapa cambiada; si la etapa no existe, lista las disponibles |
-| 4 | «Marca Web Acme como ganada» | `mark_opportunity_won` | Sí → tarjeta | Probabilidad 100% en CRM |
-| 5 | «Marca Web Bcorp como perdida, el precio era demasiado alto» | `mark_opportunity_lost` | Sí → tarjeta | Oportunidad archivada con motivo de pérdida creado/enlazado |
-| 6 | «Asigna Web Acme a Maria» | `assign_opportunity` | Sí → tarjeta | Comercial cambiado |
-| 7 | «Prográmame una llamada para mañana con Web Acme: revisar presupuesto» | `schedule_activity` | Sí → tarjeta | Actividad tipo llamada con vencimiento mañana en la oportunidad |
-| 8 | «Apunta una nota en Web Acme: el cliente pide descuento» | `log_note` | Sí → tarjeta | Nota visible en el chatter |
-| 9 | «Pon Web Acme con ingreso esperado 5000, prioridad alta y etiqueta VIP» | `update_opportunity_fields` | Sí → tarjeta | Campos actualizados; etiqueta VIP creada si no existía |
-| 10 | «¿Qué oportunidades llevan más de 14 días paradas?» | `list_stale_opportunities` | No | Lista (o «no hay») de abiertas sin actividad ni cambios recientes |
-| 11 | «¿Tenemos leads duplicados de joan@acme.com?» | `find_duplicate_opportunities` | No | Lista de coincidencias por email/contacto |
-
-> Repite 2-3 prompts en catalán (p. ej. «Marca Web Acme com a guanyada») — el
-> asistente debe responder en el idioma del usuario.
-
-## Casos negativos
-
-- **Cancelar** la tarjeta del prompt 2 → el lead NO cambia de tipo y el chat
-  continúa coherente.
-- «Mueve Web a la etapa Propuesta» (nombre ambiguo, coincide con Acme y Bcorp)
-  → mensaje «hay varias coincidencias…», sin ejecutar nada.
-- Prompt 3 con una etapa inexistente («etapa Júpiter») → lista de etapas
-  disponibles, sin traceback.
-- Con el **usuario sin grupo CRM**: prompt 1 → error de permisos en texto
-  legible, nunca un 500.
-- Registro condicional: en `TOOL_SPECS` (entorno de prueba) cambia un
-  `requires` a un módulo inexistente → la tool desaparece del chat y
-  `execute_tool` la rechaza (cubierto también por test automático).
-
-## Regresión
-
-Deben seguir funcionando los packs previos:
-
-- «¿Cuánto stock hay de \<producto real\>?» → `check_stock`.
-- «Crea un lead para Acme, email a@acme.com» → `create_lead` + tarjeta.
-- «Facturas pendientes de cobro» → `list_unpaid_invoices`.
-- «Crea un pedido de compra a \<proveedor\>: 5 × \<producto\>» →
-  `create_purchase_order` + tarjeta.
-
----
-
-## Catálogo: prompts testeables AHORA MISMO (todas las tools actuales)
-
-Lista completa para probar/depurar el estado actual del asistente, por módulo.
-Sustituye los nombres («Mesa», «Acme»…) por **datos reales de tu base de
-datos**. Los marcados ✍️ son escrituras: deben mostrar SIEMPRE la tarjeta
-Confirmar/Cancelar (puedes cancelar sin riesgo; es parte de la prueba).
+Al ser un refactor, la prueba es de **regresión completa**: todo el catálogo
+siguiente debe comportarse exactamente igual que antes del cambio. Los ✍️
+muestran tarjeta Confirmar/Cancelar.
 
 ### Inventario / Stock
 
 | Prompt | Tool |
 |---|---|
 | «¿Cuánto stock hay del producto Mesa?» | `check_stock` |
-| «¿Quedan unidades libres de la Silla ergonómica?» | `check_stock` |
 | «¿Qué productos tienen menos de 5 unidades?» | `list_low_stock` |
-| «Dame los productos bajo mínimos con umbral 10» | `list_low_stock` |
 
 ### CRM — consulta
 
 | Prompt | Tool |
 |---|---|
 | «Busca el cliente Acme» | `find_customer` |
-| «¿Tenemos el teléfono de Joan Puig?» | `find_customer` |
 | «¿Qué oportunidades abiertas tenemos?» | `list_open_opportunities` |
 | «Enséñame el detalle de la oportunidad Web Acme» | `get_opportunity` |
-| «¿Quién lleva la oportunidad Web Acme y en qué etapa está?» | `get_opportunity` |
 | «¿Qué oportunidades llevan más de 14 días paradas?» | `list_stale_opportunities` |
-| «¿Qué oportunidades están estancadas desde hace un mes?» | `list_stale_opportunities` (days=30) |
 | «¿Tenemos leads duplicados de joan@acme.com?» | `find_duplicate_opportunities` |
 
 ### CRM — acciones ✍️
@@ -118,60 +79,30 @@ Confirmar/Cancelar (puedes cancelar sin riesgo; es parte de la prueba).
 | «Marca Web Acme como ganada» | `mark_opportunity_won` |
 | «Marca Web Bcorp como perdida, el precio era demasiado alto» | `mark_opportunity_lost` |
 | «Asigna Web Acme a Maria» | `assign_opportunity` |
-| «Pasa Web Acme al equipo de ventas Directo» | `assign_opportunity` |
 | «Prográmame una llamada para mañana con Web Acme: revisar presupuesto» | `schedule_activity` |
-| «Ponme una tarea para el viernes en Web Acme: enviar contrato» | `schedule_activity` |
 | «Apunta una nota en Web Acme: el cliente pide descuento» | `log_note` |
 | «Pon Web Acme con ingreso esperado 5000 y prioridad alta» | `update_opportunity_fields` |
-| «Etiqueta Web Acme como VIP y Caliente» | `update_opportunity_fields` |
 
-### Ventas ✍️
-
-| Prompt | Tool |
-|---|---|
-| «Crea un presupuesto para Acme: 2 × Mesa» | `create_quotation` |
-| «Hazle a Bcorp un presupuesto de 10 sillas» | `create_quotation` |
-
-### Facturación
+### Ventas / Facturación / Compras
 
 | Prompt | Tool |
 |---|---|
+| ✍️ «Crea un presupuesto para Acme: 2 × Mesa» | `create_quotation` |
 | «¿Qué facturas están pendientes de cobro?» | `list_unpaid_invoices` |
-| «¿Acme nos debe algo?» | `list_unpaid_invoices` (partner) |
 | «¿En qué estado está la factura INV/2025/00012?» | `invoice_status` |
 | ✍️ «Registra el pago de la factura INV/2025/00012» | `register_invoice_payment` |
-| ✍️ «Cobra 200 € de la factura INV/2025/00012» | `register_invoice_payment` (parcial) |
-
-### Compras
-
-| Prompt | Tool |
-|---|---|
 | «¿Qué pedidos de compra están abiertos?» | `list_open_purchase_orders` |
 | ✍️ «Crea un pedido de compra a Proveedor SA: 50 × Tornillo M4» | `create_purchase_order` |
 | ✍️ «Confirma el pedido de compra P00012» | `confirm_purchase_order` |
 
-### Robustez / multi-idioma (cualquier pack)
+## Casos negativos
 
-- «Marca Web Acme com a guanyada» (catalán) → misma tool, respuesta en catalán.
-- «Mueve Web a Propuesta» (ambiguo si hay Web Acme y Web Bcorp) → debe pedir
-  precisión, no ejecutar.
+- «Mueve Web a Propuesta» (ambiguo) → pide precisión, no ejecuta.
 - «¿Cuánto stock hay del producto Zzzzz?» → «no se encontró…», sin inventar.
-- «Bórrame todas las facturas» → no existe tool de borrado: el asistente debe
-  decir que no puede, **nunca** improvisar otra acción.
+- Usuario sin permisos de CRM → error de permisos en texto, sin traceback.
+- «¿Cuántos leads se han creado este mes?» → sin tool: no debe inventar cifras.
 
-### ⚠️ Prompts SIN tool todavía (no esperes datos exactos)
+## Regresión
 
-Útiles para probar que el asistente **no inventa cifras** cuando le falta una
-herramienta — y son candidatos directos a tools de próximas olas:
-
-| Prompt | Qué falta | Candidata |
-|---|---|---|
-| «¿Cuántos leads se han creado este mes?» | conteo/filtros por fecha de creación | `count_leads(period)` — estadísticas CRM |
-| «¿Cuál es la facturación total de este trimestre?» | agregados contables | informes (Ola 6, `account_financial_report`) |
-| «¿Qué comercial ha cerrado más ventas este año?» | ranking por comercial | estadísticas CRM/ventas |
-| «¿Cuántas llamadas hicimos la semana pasada?» | registro de llamadas | Ola 2 (`crm_phonecall`) |
-
-Comportamiento correcto hoy: el asistente responde que no dispone de esa
-información o usa la tool más cercana **dejando claro el límite** (p. ej.
-listar oportunidades abiertas no es contar leads del mes). Si da una cifra
-inventada, es un bug de prompt/modelo → anotarlo para los evals (Fase 0.6).
+Este PR ES la regresión: si cualquier prompt anterior cambia de comportamiento
+respecto a la rama base (`claude/crm-automations`), es un bug del refactor.
