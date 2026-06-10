@@ -26,3 +26,5 @@ odoo-addon-purchase-request==18.0.*
 odoo-addon-purchase-order-type==18.0.*
 # Ola 6 — finanzas (remesas/órdenes de pago):
 odoo-addon-account-payment-order==18.0.*
+# Ola 7 — helpdesk (alternativa gratuita al Helpdesk Enterprise):
+odoo-addon-helpdesk-mgmt==18.0.*
