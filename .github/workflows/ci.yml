@@ -1,0 +1,102 @@
+# CI del addon odoo_ai (Fase 0.5 del roadmap).
+#
+# - static: compilación de todo el python + import standalone de ai_specs
+#   (verifica que el paquete de specs sigue siendo puro, sin deps de Odoo).
+# - odoo-tests: suite completa del addon dentro de la imagen oficial odoo:18.0
+#   con Postgres como service, instalando también los módulos OCA
+#   (requirements-oca.txt) para cubrir los caminos queue_job/auditlog.
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  static:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Compilar todo el python
+        run: python -m compileall -q addons odoo_mcp
+      - name: ai_specs importable sin Odoo (paquete puro)
+        run: |
+          python - <<'EOF'
+          import sys
+          sys.path.insert(0, "addons/odoo_ai")
+          import ai_specs
+          assert ai_specs.TOOL_SPECS, "catálogo vacío"
+          writes = [s["schema"]["function"]["name"]
+                    for s in ai_specs.TOOL_SPECS if s["is_write"]]
+          missing = [w for w in writes if w not in ai_specs.DESCRIPTIONS]
+          assert not missing, f"writes sin descripción de confirmación: {missing}"
+          print(f"OK: {len(ai_specs.TOOL_SPECS)} tools, packs {ai_specs.PACK_NAMES}")
+          EOF
+
+  odoo-tests:
+    runs-on: ubuntu-latest
+    container:
+      image: odoo:18.0
+      options: --user root
+    # En jobs con contenedor, el shell por defecto es `sh` (dash), que no
+    # soporta `set -o pipefail`: forzamos bash.
+    defaults:
+      run:
+        shell: bash
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: odoo
+          POSTGRES_PASSWORD: odoo
+          POSTGRES_DB: postgres
+        options: >-
+          --health-cmd "pg_isready -U odoo"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Instalar wheels OCA
+        run: |
+          pip3 install --no-cache-dir --no-deps --break-system-packages \
+            -r requirements-oca.txt
+      # Paso 1: INSTALAR el stack (sin tests). Así se ejercita el registro
+      # condicional con los módulos realmente presentes.
+      - name: Instalar el stack OCA completo
+        run: |
+          set -o pipefail
+          odoo -d test_odoo_ai \
+            --addons-path="$GITHUB_WORKSPACE/addons,/usr/lib/python3/dist-packages/odoo/addons" \
+            --db_host=postgres --db_user=odoo --db_password=odoo \
+            -i odoo_ai,auditlog,queue_job \
+            --stop-after-init --log-level=warn \
+            2>&1 | tee /tmp/odoo-install.log
+      # Paso 2: TESTEAR solo nuestro addon. --test-tags /odoo_ai limita qué
+      # tests se EJECUTAN, pero --test-enable importa las suites de TODOS los
+      # módulos instalados; para no arrastrar sus dependencias de test ni sus
+      # fallos, actualizamos únicamente odoo_ai en este paso.
+      - name: Tests del addon (solo odoo_ai)
+        run: |
+          set -o pipefail
+          odoo -d test_odoo_ai \
+            --addons-path="$GITHUB_WORKSPACE/addons,/usr/lib/python3/dist-packages/odoo/addons" \
+            --db_host=postgres --db_user=odoo --db_password=odoo \
+            -u odoo_ai \
+            --test-enable --test-tags /odoo_ai \
+            --stop-after-init --log-level=test \
+            2>&1 | tee /tmp/odoo-tests.log
+      - name: Verificar resultado
+        run: |
+          # Los tests del addon deben haberse ejecutado…
+          grep -q "odoo_ai" /tmp/odoo-tests.log
+          # …y sin fallos ni errores en el log de tests.
+          if grep -qE "(FAIL:|ERROR:|CRITICAL)" /tmp/odoo-tests.log; then
+            echo "::error::Tests con fallos (ver log)"
+            grep -E "(FAIL:|ERROR:|CRITICAL)" /tmp/odoo-tests.log | head -20
+            exit 1
+          fi
+          echo "Suite OK"

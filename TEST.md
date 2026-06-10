@@ -1,62 +1,44 @@
-# TEST — Fase 0.4: Auditoría de cambios del agente (OCA auditlog)
+# TEST — Fase 0.5: CI con módulos OCA
 
 > Convención y flujo de depuración con Claude Dispatch: ver [TESTING.md](TESTING.md).
 
 ## Alcance
 
-[ROADMAP.md](ROADMAP.md), Fase 0.4. Traza independiente de «qué cambió el
-agente» complementaria al historial de conversación:
+[ROADMAP.md](ROADMAP.md), Fase 0.5. GitHub Actions (`.github/workflows/ci.yml`)
+con dos jobs en cada push/PR:
 
-- Wheel `odoo-addon-auditlog` añadido a `requirements-oca.txt` (imagen).
-- `odoo.ai.audit.setup_rules()`: crea (idempotente) reglas de auditlog para
-  los modelos que las tools de escritura tocan (`crm.lead`, `sale.order`,
-  `purchase.order`, `account.move`, `account.payment`).
-- Se ejecuta solo en el `post_init_hook` del addon; si auditlog se instala
-  DESPUÉS, hay una acción de servidor «Configurar auditoría del Asistente IA».
-- Sin auditlog instalado: no-op silencioso (nada cambia).
+- **static**: compila todo el python y verifica que `ai_specs` sigue siendo un
+  paquete puro importable sin Odoo (y que toda tool de escritura tiene
+  descripción de confirmación).
+- **odoo-tests**: suite completa del addon dentro de la imagen `odoo:18.0` con
+  Postgres como service, **instalando los wheels OCA** de
+  `requirements-oca.txt` y la BD con `odoo_ai,auditlog,queue_job` (cubre los
+  caminos condicionales de las Fases 0.3/0.4).
 
-## Prerrequisitos
+## Cómo probarlo
 
-1. `docker compose build odoo` (instala el wheel).
-2. Instalar `auditlog` en la BD: Apps → «Audit Log» → Instalar (o añadirlo al
-   `-i` del command del compose).
-3. Si `odoo_ai` ya estaba instalado: ejecutar la acción de servidor
-   *Ajustes → Técnico → Acciones de servidor → Configurar auditoría del
-   Asistente IA*.
-
-## Tests automáticos
-
-```bash
-docker compose run --rm odoo odoo -d odoo_test -i odoo_ai \
-  --test-enable --stop-after-init
-# Con auditlog en la BD de test (cubre el camino completo):
-docker compose run --rm odoo odoo -d odoo_test2 -i odoo_ai,auditlog \
-  --test-enable --stop-after-init
-```
-
-`test_audit.py`: no-op sin auditlog, creación + idempotencia con auditlog,
-y recordatorio de cobertura de `AUDITED_MODELS`.
-
-## Prompts de prueba (chat)
-
-Con auditlog instalado y reglas configuradas:
-
-| # | Acción | Verificación |
-|---|--------|--------------|
-| 1 | «Crea un lead para Acme» + Confirmar | *Técnico → Audit → Logs*: entrada `create` sobre `crm.lead` con tu usuario |
-| 2 | «Marca Web Acme como ganada» + Confirmar | Entrada `write` sobre `crm.lead` |
-| 3 | «Registra el pago de la factura INV/…» + Confirmar | Entradas sobre `account.move` / `account.payment` |
-| 4 | Cancelar una tarjeta de confirmación | **Ninguna** entrada nueva en el log |
-
-Punto clave: el log de auditoría registra el **usuario real** (las tools corren
-con sus permisos), no un usuario de sistema.
+1. Empuja cualquier commit a una rama → pestaña **Actions** del repo: ambos
+   jobs en verde.
+2. Prueba de fuego del guard: rompe temporalmente un test (p. ej. invierte un
+   assert de `test_packs.py`), push → el job `odoo-tests` debe fallar con el
+   `FAIL:` visible en el log; revierte.
+3. Localmente, el equivalente del job es:
+   ```bash
+   docker compose run --rm odoo bash -c "
+     pip3 install --no-deps --break-system-packages -r /dev/stdin <<< 'odoo-addon-queue-job==18.0.*
+   odoo-addon-auditlog==18.0.*' 2>/dev/null;
+     odoo -d test_ci -i odoo_ai,auditlog,queue_job --test-enable \
+       --test-tags /odoo_ai --stop-after-init --log-level=test"
+   ```
+   (con la imagen ya reconstruida, los wheels ya están dentro y basta el `odoo …`).
 
 ## Casos negativos
 
-- Sin auditlog instalado: el addon instala/actualiza sin errores y el chat
-  funciona igual (no-op).
-- Ejecutar dos veces la acción de servidor → no duplica reglas.
+- Si un wheel OCA no existiera para 18.0, el job falla en «Instalar wheels
+  OCA» → revisar la versión en PyPI (`pip index versions odoo-addon-<nombre>`)
+  y ajustar el pin de `requirements-oca.txt`.
 
 ## Regresión
 
-Catálogo de la Fase 0.1 (síncrono) + routing 0.2 + async 0.3 si lo activaste.
+La propia CI es ahora la regresión automática de todos los TEST.md anteriores
+(suite completa del addon en cada push).
