@@ -6,6 +6,15 @@
 #          (kind)      kind load docker-image odoo-ai:18.0
 FROM odoo:18.0
 
+# Módulos OCA como wheels de PyPI (ver requirements-oca.txt). --no-deps porque
+# el wheel declara una dependencia "odoo" que no es pip-instalable en esta
+# imagen (Odoo va instalado por paquete de sistema).
+USER root
+COPY requirements-oca.txt /tmp/requirements-oca.txt
+RUN pip3 install --no-cache-dir --no-deps --break-system-packages \
+    -r /tmp/requirements-oca.txt
+USER odoo
+
 # El addon se monta en /mnt/extra-addons, incluido en addons_path (odoo.conf).
 COPY ./addons /mnt/extra-addons
 

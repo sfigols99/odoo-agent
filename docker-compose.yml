@@ -53,6 +53,13 @@ services:
     # Crea la BD `odoo` e instala el addon en el primer arranque; en arranques
     # posteriores el módulo ya está instalado y -i es un no-op.
     command: ["odoo", "-d", "odoo", "-i", "odoo_ai", "--db-filter=^odoo$$"]
+    # --- Modo asíncrono (Fase 0.3, opcional) ---------------------------------
+    # El wheel de queue_job ya está en la imagen (requirements-oca.txt). Para
+    # activarlo usa este command (el jobrunner requiere workers>0 y carga
+    # server-wide) y pon odoo_ai.async_enabled=1 en Parámetros del sistema:
+    # command: ["odoo", "-d", "odoo", "-i", "odoo_ai,queue_job",
+    #           "--db-filter=^odoo$$", "--load=base,web,queue_job",
+    #           "--workers=2", "--max-cron-threads=1"]
     ports:
       - "8069:8069"
       - "8072:8072" # bus/websocket

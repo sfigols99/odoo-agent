@@ -20,6 +20,8 @@ DEFAULTS = {
     # se enruta por dominio antes de exponer tools al modelo.
     "odoo_ai.enabled_packs": "all",
     "odoo_ai.router_threshold": "20",
+    # Fase 0.3 — turno del agente en job asíncrono (queue_job), OFF por defecto.
+    "odoo_ai.async_enabled": "0",
 }
 
 SYSTEM_PROMPT = """Eres un asistente integrado en el ERP Odoo de la empresa. \
