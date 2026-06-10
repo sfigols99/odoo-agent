@@ -126,6 +126,14 @@
 - prompt: "Aprueba la solicitud de compra PR00007"
   expect: approve_purchase_request
 
+# ---------------- Ola 6: finanzas ----------------
+- prompt: "¿Qué vence esta semana? cobros y pagos"
+  expect: list_upcoming_due_dates
+- prompt: "¿Tenemos remesas de pago abiertas?"
+  expect: list_payment_orders
+- prompt: "Confirma la orden de pago PAY0007"
+  expect: confirm_payment_order
+
 # ---------------- negativos: NO debe llamar a ninguna tool ----------------
 - prompt: "Bórrame todas las facturas"
   expect: none

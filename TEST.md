@@ -1,59 +1,56 @@
-# TEST — Ola 5: Compras (solicitudes internas + tipos de pedido, OCA)
+# TEST — Ola 6: Finanzas (vencimientos core + remesas de pago OCA)
 
 > Convención y flujo de depuración con Claude Dispatch: ver [TESTING.md](TESTING.md).
 
 ## Alcance
 
-[ROADMAP.md](ROADMAP.md), Ola 5. Catálogo total: 40 tools.
+[ROADMAP.md](ROADMAP.md), Ola 6. Catálogo total: 43 tools.
 
-| Módulo OCA | Qué añade |
-|---|---|
-| `purchase_request` | ✍️ `create_purchase_request` (crea + envía a aprobación), `list_purchase_requests`, ✍️ `approve_purchase_request` |
-| `purchase_order_type` | `create_purchase_order` acepta `order_type` (guardado por campo) |
+**Core account:**
+- `list_upcoming_due_dates`: «¿qué vence esta semana?» — apuntes a cobrar y a
+  pagar con vencimiento dentro de N días, marcando los ya vencidos.
 
-> Gate aplicado: `purchase_discount` **no tiene wheel 18.0** en PyPI →
-> pospuesto (anotado en requirements-oca.txt).
-
-El flujo «necesito X, que alguien lo apruebe» es ideal para chat: el empleado
-lo pide en una frase y el responsable lo aprueba en otra.
+**OCA `account_payment_order` (código 18.0 verificado):**
+- `list_payment_orders`: remesas en borrador/confirmadas/con fichero.
+- ✍️ `confirm_payment_order`: borrador → confirmada (`draft2open`); la
+  generación del fichero bancario queda deliberadamente en la UI.
 
 ## Prerrequisitos
 
 1. `docker compose build odoo`.
-2. Apps: «Purchase Request», «Purchase Order Type».
-3. Usuarios: uno normal (solicita) y uno con grupo *Purchase Request Manager*
-  (aprueba) para probar el flujo completo con permisos reales.
+2. Apps: «Account Payment Order» (requiere configurar un *modo de pago*).
+3. Datos: alguna factura validada con vencimiento próximo o pasado; para
+   remesas, una orden de pago en borrador con líneas.
 
 ## Tests automáticos
 
 ```bash
 docker compose run --rm odoo odoo -d odoo_test \
-  -i odoo_ai,purchase_request,purchase_order_type \
+  -i odoo_ai,account_payment_order \
   --test-enable --test-tags /odoo_ai --stop-after-init
 ```
 
-`test_purchase_oca.py`: flujo completo (crear → to_approve → listar →
-aprobar), aprobación en estado incorrecto, tipo sin módulo (mensaje claro, no
-crea nada), tipo con módulo, tools ocultas. La CI ejecuta esta combinación.
+`test_account_oca.py`: vencimientos sin datos (texto, sin error), factura
+vencida real (aparece con «VENCIDO» y «A COBRAR»), listado/confirmación de
+remesas (incl. inexistente), tools ocultas sin módulo.
 
 ## Prompts de prueba (chat)
 
 | # | Prompt | Tool | ¿Escritura? | Esperado |
 |---|--------|------|-------------|----------|
-| 1 | «Necesito 10 tornillos M4 para el taller, pide que los compren» | `create_purchase_request` | Sí → tarjeta | Solicitud en «Por aprobar» visible en Compras → Solicitudes |
-| 2 | «¿Qué solicitudes de compra hay abiertas?» | `list_purchase_requests` | No | Incluye la del paso 1 con solicitante y líneas |
-| 3 | (como manager) «Aprueba la solicitud PR00001» | `approve_purchase_request` | Sí → tarjeta | Estado «Aprobada» |
-| 4 | «Crea un pedido de compra a Proveedor SA de tipo Importación: 50 tornillos» | `create_purchase_order` | Sí → tarjeta | RFQ con el tipo asignado |
+| 1 | «¿Qué vence esta semana?» | `list_upcoming_due_dates` | No | Cobros y pagos ordenados por fecha, vencidos marcados ⚠️ |
+| 2 | «¿Qué cobros tenemos atrasados?» | `list_upcoming_due_dates` | No | Los VENCIDOS aparecen primero |
+| 3 | «¿Tenemos remesas de pago abiertas?» | `list_payment_orders` | No | Modo de pago, nº de líneas, total y estado |
+| 4 | «Confirma la orden de pago PAY0001» | `confirm_payment_order` | Sí → tarjeta | Estado «Confirmada»; el fichero SEPA se genera desde la UI |
 
 ## Casos negativos
 
-- Paso 3 con el usuario normal (sin grupo manager) → error de permisos en
-  texto; la solicitud NO cambia de estado.
-- Aprobar una solicitud en borrador → «no está pendiente de aprobación».
-- Paso 4 sin `purchase_order_type` → mensaje claro y NO se crea el pedido.
-- Producto inexistente en el paso 1 → «No se encontró el producto…».
+- Confirmar una orden ya confirmada → «no está en borrador».
+- Confirmar una orden sin líneas → «no tiene líneas de pago», sin tocarla.
+- Paso 4 sin el módulo → la tool no existe para el LLM.
+- Usuario sin permisos de contabilidad → error de permisos en texto.
 
 ## Regresión
 
-`create_purchase_order` SIN `order_type` idéntico a antes. Catálogo previo
-completo. Evals: 51 casos (3 nuevos).
+Catálogo previo completo (facturas/pagos igual que antes). Evals: 54 casos
+(3 nuevos).
