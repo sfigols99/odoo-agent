@@ -23,5 +23,14 @@
             <field name="key">odoo_ai.request_timeout</field>
             <field name="value">120</field>
         </record>
+        <!-- Fase 0.2: selección dinámica de tools -->
+        <record id="cfg_enabled_packs" model="ir.config_parameter">
+            <field name="key">odoo_ai.enabled_packs</field>
+            <field name="value">all</field>
+        </record>
+        <record id="cfg_router_threshold" model="ir.config_parameter">
+            <field name="key">odoo_ai.router_threshold</field>
+            <field name="value">20</field>
+        </record>
     </data>
 </odoo>
