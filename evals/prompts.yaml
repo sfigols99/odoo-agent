@@ -134,6 +134,22 @@
 - prompt: "Confirma la orden de pago PAY0007"
   expect: confirm_payment_order
 
+# ---------------- Ola 7: helpdesk + proyectos ----------------
+- prompt: "Abre un ticket: el cliente Acme no puede entrar al portal"
+  expect: create_ticket
+- prompt: "¿Qué tickets de soporte tenemos abiertos?"
+  expect: list_open_tickets
+- prompt: "¿Cómo está el ticket HT00012?"
+  expect: get_ticket
+- prompt: "Asigna el ticket HT00012 a Maria"
+  expect: assign_ticket
+- prompt: "Cierra el ticket HT00012, ya está resuelto"
+  expect: close_ticket
+- prompt: "Crea una tarea en el proyecto Web: revisar el formulario de contacto"
+  expect: create_task
+- prompt: "¿Qué tareas tengo pendientes?"
+  expect: list_my_tasks
+
 # ---------------- negativos: NO debe llamar a ninguna tool ----------------
 - prompt: "Bórrame todas las facturas"
   expect: none

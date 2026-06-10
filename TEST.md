@@ -1,56 +1,61 @@
-# TEST — Ola 6: Finanzas (vencimientos core + remesas de pago OCA)
+# TEST — Ola 7: Helpdesk (OCA) + Proyectos (core condicional)
 
 > Convención y flujo de depuración con Claude Dispatch: ver [TESTING.md](TESTING.md).
 
 ## Alcance
 
-[ROADMAP.md](ROADMAP.md), Ola 6. Catálogo total: 43 tools.
+[ROADMAP.md](ROADMAP.md), Ola 7. Dos packs NUEVOS (catálogo: 50 tools, 7 packs):
 
-**Core account:**
-- `list_upcoming_due_dates`: «¿qué vence esta semana?» — apuntes a cobrar y a
-  pagar con vencimiento dentro de N días, marcando los ya vencidos.
+**Pack `helpdesk`** — OCA `helpdesk_mgmt` (alternativa gratuita al Helpdesk de
+Enterprise; código 18.0 verificado):
+- ✍️ `create_ticket`, `list_open_tickets` (con `only_mine`), `get_ticket`,
+  ✍️ `assign_ticket`, ✍️ `close_ticket` (mueve a una etapa con `closed=True`).
 
-**OCA `account_payment_order` (código 18.0 verificado):**
-- `list_payment_orders`: remesas en borrador/confirmadas/con fichero.
-- ✍️ `confirm_payment_order`: borrador → confirmada (`draft2open`); la
-  generación del fichero bancario queda deliberadamente en la UI.
+**Pack `project`** — módulo **core** `project`, vía registro condicional (el
+addon NO depende de él; demuestra que `requires` sirve también para core
+opcional):
+- ✍️ `create_task` (con asignado opcional), `list_my_tasks`.
 
 ## Prerrequisitos
 
 1. `docker compose build odoo`.
-2. Apps: «Account Payment Order» (requiere configurar un *modo de pago*).
-3. Datos: alguna factura validada con vencimiento próximo o pasado; para
-   remesas, una orden de pago en borrador con líneas.
+2. Apps: «Helpdesk Management» (OCA) y «Proyecto» (core).
+3. En Helpdesk, comprobar que existe alguna etapa marcada como *cerrada*.
 
 ## Tests automáticos
 
 ```bash
 docker compose run --rm odoo odoo -d odoo_test \
-  -i odoo_ai,account_payment_order \
+  -i odoo_ai,helpdesk_mgmt,project \
   --test-enable --test-tags /odoo_ai --stop-after-init
 ```
 
-`test_account_oca.py`: vencimientos sin datos (texto, sin error), factura
-vencida real (aparece con «VENCIDO» y «A COBRAR»), listado/confirmación de
-remesas (incl. inexistente), tools ocultas sin módulo.
+`test_helpdesk_project.py`: ciclo completo del ticket (crear → listar →
+detalle → asignar → cerrar), ticket ya cerrado, tarea con proyecto y asignado,
+proyecto inexistente (lista disponibles), tools ocultas sin módulos.
 
 ## Prompts de prueba (chat)
 
 | # | Prompt | Tool | ¿Escritura? | Esperado |
 |---|--------|------|-------------|----------|
-| 1 | «¿Qué vence esta semana?» | `list_upcoming_due_dates` | No | Cobros y pagos ordenados por fecha, vencidos marcados ⚠️ |
-| 2 | «¿Qué cobros tenemos atrasados?» | `list_upcoming_due_dates` | No | Los VENCIDOS aparecen primero |
-| 3 | «¿Tenemos remesas de pago abiertas?» | `list_payment_orders` | No | Modo de pago, nº de líneas, total y estado |
-| 4 | «Confirma la orden de pago PAY0001» | `confirm_payment_order` | Sí → tarjeta | Estado «Confirmada»; el fichero SEPA se genera desde la UI |
+| 1 | «Abre un ticket: el cliente Acme no puede entrar al portal» | `create_ticket` | Sí → tarjeta | Ticket con número (HT…) en la primera etapa |
+| 2 | «¿Qué tickets tenemos abiertos?» | `list_open_tickets` | No | Incluye el del paso 1 |
+| 3 | «¿Cómo está el ticket HT00001?» | `get_ticket` | No | Detalle: contacto, etapa, asignado |
+| 4 | «Asigna el ticket HT00001 a Maria» | `assign_ticket` | Sí → tarjeta | user_id cambiado |
+| 5 | «Cierra el HT00001, ya está resuelto» | `close_ticket` | Sí → tarjeta | Etapa cerrada + nota en el chatter |
+| 6 | «Crea una tarea en el proyecto Web: revisar el formulario de contacto» | `create_task` | Sí → tarjeta | Tarea visible en el tablero del proyecto |
+| 7 | «¿Qué tareas tengo pendientes?» | `list_my_tasks` | No | Solo las tuyas, con vencimiento si lo hay |
 
 ## Casos negativos
 
-- Confirmar una orden ya confirmada → «no está en borrador».
-- Confirmar una orden sin líneas → «no tiene líneas de pago», sin tocarla.
-- Paso 4 sin el módulo → la tool no existe para el LLM.
-- Usuario sin permisos de contabilidad → error de permisos en texto.
+- Cerrar un ticket ya cerrado → «ya está cerrado».
+- Sin etapa de cierre configurada → mensaje que lo explica, sin mover nada.
+- «Crea una tarea en el proyecto Inexistente…» → lista los proyectos
+  disponibles.
+- Sin `helpdesk_mgmt`/`project` instalados → las tools no existen para el LLM.
 
 ## Regresión
 
-Catálogo previo completo (facturas/pagos igual que antes). Evals: 54 casos
-(3 nuevos).
+Catálogo previo completo. Con 50 tools, el **router de la Fase 0.2 es ya
+imprescindible**: verifica en logs que `Router de packs` enruta a `helpdesk` /
+`project` correctamente. Evals: 61 casos (7 nuevos).

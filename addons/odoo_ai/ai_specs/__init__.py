@@ -5,9 +5,9 @@
 # Cada pack define: PACK (nombre), PACK_DESCRIPTION (para el router de la
 # Fase 0.2), SPECS (lista de tools) y DESCRIPTIONS (tarjeta de confirmación).
 # Aquí se agregan añadiendo la clave "pack" a cada spec.
-from . import account, crm, purchase, sale, stock
+from . import account, crm, helpdesk, project, purchase, sale, stock
 
-PACKS = [stock, crm, sale, account, purchase]
+PACKS = [stock, crm, sale, account, purchase, helpdesk, project]
 
 TOOL_SPECS = [dict(spec, pack=mod.PACK) for mod in PACKS for spec in mod.SPECS]
 

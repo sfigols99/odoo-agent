@@ -31,3 +31,5 @@ odoo-addon-account-payment-order==18.0.*
 # Dependencias de account_payment_order:
 odoo-addon-account-payment-partner==18.0.*
 odoo-addon-account-payment-mode==18.0.*
+# Ola 7 — helpdesk (alternativa gratuita al Helpdesk Enterprise):
+odoo-addon-helpdesk-mgmt==18.0.*
