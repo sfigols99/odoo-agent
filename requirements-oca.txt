@@ -19,3 +19,6 @@ odoo-addon-sale-exception==18.0.*
 odoo-addon-base-exception==18.0.*
 odoo-addon-base-tier-validation==18.0.*
 odoo-addon-sale-tier-validation==18.0.*
+# Ola 4 — almacén (stock sin reservar, ajustes de inventario agrupados):
+odoo-addon-stock-available-unreserved==18.0.*
+odoo-addon-stock-inventory==18.0.*

@@ -108,6 +108,16 @@
 - prompt: "Rechaza el pedido S00031"
   expect: reject_sale_order
 
+# ---------------- Ola 4: almacén ----------------
+- prompt: "¿Qué albaranes tenemos pendientes?"
+  expect: list_pending_pickings
+- prompt: "Valida el albarán WH/OUT/00012"
+  expect: validate_picking
+- prompt: "Inicia un ajuste de inventario para el producto Mesa"
+  expect: start_inventory_adjustment
+- prompt: "¿Qué ajustes de inventario están abiertos?"
+  expect: list_inventory_adjustments
+
 # ---------------- negativos: NO debe llamar a ninguna tool ----------------
 - prompt: "Bórrame todas las facturas"
   expect: none
