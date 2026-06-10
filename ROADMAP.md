@@ -80,7 +80,10 @@ Para cada módulo/ola, siempre el mismo ciclo (1 rama + 1 PR por ola):
    confirmación.
 5. **Tests** `TransactionCase` por tool (con el módulo OCA como dependencia de
    test) + eval de tool-calling (0.6).
-6. **Documentar** en README (tabla del pack) y marcar la casilla aquí.
+6. **`TEST.md`** en el PR: prompts y puntos de prueba de la mejora (plantilla y
+   convención en [TESTING.md](TESTING.md)); es el guion que usa Claude Dispatch
+   para depurar.
+7. **Documentar** en README (tabla del pack) y marcar la casilla aquí.
 
 ---
 
